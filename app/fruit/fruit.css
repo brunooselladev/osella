@@ -77,6 +77,74 @@ html:has(.fruit-root).lenis body {
   transition: opacity 1100ms var(--ease);
 }
 
+/* loading: the greenhouse's line drawing sketches itself until the real room fades in over it */
+.fruit-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  color: var(--ink);
+  pointer-events: none;
+  transition: opacity 1000ms var(--ease) 250ms, visibility 0s linear 1300ms;
+}
+
+.fruit-loader.is-done {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.fruit-loader svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fruit-loader path,
+.fruit-loader polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: fruit-sketch 3.4s var(--ease) infinite both;
+}
+
+.fruit-loader-rail {
+  stroke-opacity: 0.1;
+}
+
+.fruit-loader-frame {
+  stroke-opacity: 0.2;
+}
+
+.fruit-loader .fruit-loader-door {
+  stroke: var(--rose);
+  stroke-opacity: 0.7;
+  animation-delay: 1500ms;
+}
+
+@keyframes fruit-sketch {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  80% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
 /* the room comes out of the haze once its shaders are compiled */
 .fruit-canvas.is-ready {
   opacity: 1;
@@ -1089,5 +1157,11 @@ html:has(.fruit-root).lenis body {
 
   .fruit-root .fruit-hero {
     filter: none;
+  }
+
+  .fruit-root .fruit-loader path,
+  .fruit-root .fruit-loader polyline {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 }

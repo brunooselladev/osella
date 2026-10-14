@@ -27,6 +27,7 @@ export const fruitUi = {
     room: 'A greenhouse with a wooden bench of four specimens. Cases are listed on the left. Scroll walks the aisle. The door at the end is the contact.',
     caption: 'Next.js 16 · React 19 · Three.js · GSAP ScrollTrigger · Lenis · DOM over WebGL',
     hud: 'bench',
+    loading: 'Loading the greenhouse',
   },
   es: {
     fruit: 'Fruit',
@@ -54,6 +55,7 @@ export const fruitUi = {
     room: 'Un invernadero con un banco de madera y cuatro especímenes. Los casos están a la izquierda. El scroll recorre el pasillo. La puerta del fondo es el contacto.',
     caption: 'Next.js 16 · React 19 · Three.js · GSAP ScrollTrigger · Lenis · DOM over WebGL',
     hud: 'bench',
+    loading: 'Cargando el invernadero',
   },
 } as const
 

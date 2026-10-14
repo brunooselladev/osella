@@ -12,6 +12,7 @@ import { FruitChrome } from './chrome'
 import { FruitCursor } from './cursor'
 import { FruitDoor } from './door'
 import { FruitFallback } from './fallback'
+import { FruitLoader } from './loader'
 import { FruitSheet, STEPS } from './sheet'
 import { useBenchScroll } from './use-bench-scroll'
 import type { BenchCase, BenchCopy } from './types'
@@ -72,6 +73,8 @@ export function BenchApp({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
   const [lens, setLens] = useState<Lens>('business')
   const [visited, setVisited] = useState<Set<string>>(new Set())
   const [useGl, setUseGl] = useState(true)
+  const [sceneShown, setSceneShown] = useState(false)
+  const onSceneShown = useCallback(() => setSceneShown(true), [])
 
   const active = useMemo(() => cases.find((item) => item.id === selectedId) ?? null, [cases, selectedId])
 
@@ -264,8 +267,10 @@ export function BenchApp({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
       <div ref={pinRef} className="fruit-pin" aria-hidden="true" />
       <div className="fruit-stage">
         <p className="sr-only">{ui.room}</p>
+        {useGl ? <FruitLoader done={sceneShown} label={ui.loading} /> : null}
         {useGl ? (
           <FruitScene
+            onShown={onSceneShown}
             onHover={(id) => {
               live.hoverId = id
               if (id && !sheetOpenRef.current) {

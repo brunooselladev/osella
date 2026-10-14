@@ -383,16 +383,24 @@ export function FruitScene({
   onHover,
   onPick,
   onFail,
+  onShown: onShownProp,
 }: {
   onHover: (id: string | null) => void
   onPick: (id: string) => void
   onFail?: () => void
+  onShown?: () => void
 }) {
   const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
   const [ready, setReady] = useState(false)
   const [shown, setShown] = useState(false)
   const onReady = useMemo(() => () => setReady(true), [])
-  const onShown = useMemo(() => () => setShown(true), [])
+  const onShown = useMemo(
+    () => () => {
+      setShown(true)
+      onShownProp?.()
+    },
+    [onShownProp],
+  )
   // phones start one step down
   const [startDpr] = useState(() => {
     if (mobile && getTier() === 0) setTier(1)
