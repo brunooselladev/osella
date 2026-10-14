@@ -1,16 +1,19 @@
 'use client'
 
-import { Component, type ReactNode, useEffect, useMemo, useRef } from 'react'
+import { Component, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Environment, Lightformer } from '@react-three/drei'
+import { Environment, Lightformer, PerformanceMonitor } from '@react-three/drei'
 import { Bloom, DepthOfField, EffectComposer, N8AO, Noise, ToneMapping, Vignette } from '@react-three/postprocessing'
-import { ToneMappingMode, type DepthOfFieldEffect } from 'postprocessing'
+import { EffectPass, ToneMappingMode, type DepthOfFieldEffect } from 'postprocessing'
 import * as THREE from 'three'
 import { live } from './bench-live'
 import { CAMERA_LOOK, CAMERA_POS, SPECIMENS, nearestCaseStation, nearestStation, splineT } from './camera-path'
 import { day, evalDay, LENS_TOD, todAt } from './day'
 import { Dust, Shafts, Sky, Trees } from './atmosphere'
 import { Greenhouse } from './greenhouse'
+import { getTier, setTier, TIERS, useTier } from './quality'
+import { SharpenEffect } from './sharpen'
+import { texturesReady } from './textures'
 import { Props } from './props'
 import { Specimens } from './specimens'
 import { LENGTH } from './world'
@@ -102,6 +105,16 @@ function DayRig({ mobile }: { mobile: boolean }) {
   const hemi = useRef<THREE.HemisphereLight>(null)
   const target = useMemo(() => new THREE.Object3D(), [])
   const { scene, gl, camera } = useThree()
+  const tier = useTier()
+
+  useEffect(() => {
+    const s = sun.current
+    const size = TIERS[tier].shadow
+    if (!s || s.shadow.mapSize.x === size) return
+    s.shadow.mapSize.set(size, size)
+    s.shadow.map?.dispose()
+    s.shadow.map = null
+  }, [tier])
 
   useEffect(() => {
     scene.fog = new THREE.Fog('#f1e3ca', 5, 38)
@@ -130,7 +143,6 @@ function DayRig({ mobile }: { mobile: boolean }) {
       s.position.copy(target.position).addScaledVector(day.sunDir, 24)
       s.color.copy(day.sunColor)
       s.intensity = day.sunI
-      s.castShadow = !mobile && day.sunI > 0.05
     }
     if (hemi.current) {
       hemi.current.color.copy(day.sky)
@@ -188,7 +200,11 @@ function FocusRig({ dof }: { dof: React.RefObject<DepthOfFieldEffect | null> }) 
   const want = useMemo(() => new THREE.Vector3(), [])
   const screen = useMemo(() => new THREE.Vector3(), [])
   const root = useRef<HTMLElement | null>(null)
-  const { size } = useThree()
+  const { size, scene } = useThree()
+  const ray = useMemo(() => new THREE.Raycaster(), [])
+  const occluders = useRef<THREE.Object3D[] | null>(null)
+  const seen = useRef({ id: '', frame: 0, visible: true })
+  const dir = useMemo(() => new THREE.Vector3(), [])
 
   useFrame(({ camera }, dt) => {
     const id = live.selectedId ?? live.hoverId ?? nearestCaseStation(live.progress).caseId
@@ -197,13 +213,38 @@ function FocusRig({ dof }: { dof: React.RefObject<DepthOfFieldEffect | null> }) 
     else if (spec) want.set(...spec.position)
     focus.lerp(want, 1 - Math.exp(-4 * dt))
     const effect = dof.current
-    if (effect) effect.target = focus
+    if (effect) {
+      effect.target = focus
+      effect.bokehScale = TIERS[getTier()].bokeh
+    }
 
     // project the selected specimen for the DOM tag
     if (!root.current) root.current = document.querySelector('.fruit-root')
     const el = root.current
     const sel = SPECIMENS.find((s) => s.id === live.selectedId)
     if (el && sel) {
+      // The tag is DOM and always draws on top, so hide it whenever the specimen is out of sight:
+      // from outside the greenhouse, or behind a post or wall (raycast a few times a second).
+      const memo = seen.current
+      memo.frame += 1
+      if (memo.id !== sel.id || memo.frame % 6 === 0) {
+        memo.id = sel.id
+        let visible = camera.position.z > 0.25
+        if (visible) {
+          occluders.current ??= (() => {
+            const list: THREE.Object3D[] = []
+            scene.traverse((o) => o.userData.occluder && list.push(o))
+            return list
+          })()
+          dir.set(...sel.position).sub(camera.position)
+          const dist = dir.length()
+          ray.set(camera.position, dir.normalize())
+          ray.far = dist - 0.25
+          visible = ray.intersectObjects(occluders.current, false).length === 0
+        }
+        memo.visible = visible
+      }
+      el.dataset.tagHidden = memo.visible ? 'false' : 'true'
       screen.set(sel.position[0], sel.position[1] + 0.12, sel.position[2]).project(camera)
       const x = (screen.x * 0.5 + 0.5) * size.width
       const y = (-screen.y * 0.5 + 0.5) * size.height
@@ -216,35 +257,111 @@ function FocusRig({ dof }: { dof: React.RefObject<DepthOfFieldEffect | null> }) 
   return null
 }
 
+type AOPass = { configuration: { halfRes: boolean } }
+
 function Post({ mobile }: { mobile: boolean }) {
   const dof = useRef<DepthOfFieldEffect>(null)
+  const ao = useRef<AOPass>(null)
   const reduce = live.reduce
+  const tier = useTier()
+  const [aoHalf] = useState(() => TIERS[getTier()].aoHalf)
+  const { camera } = useThree()
+  // its own pass, last before the grain, so it sharpens the finished image (not the pre-DOF one)
+  const sharpen = useMemo(() => new EffectPass(camera, new SharpenEffect(0.7)), [camera])
+  useEffect(() => () => sharpen.dispose(), [sharpen])
+  useEffect(() => {
+    if (ao.current) ao.current.configuration.halfRes = TIERS[tier].aoHalf
+  }, [tier])
   return (
     <>
       <FocusRig dof={dof} />
       <EffectComposer multisampling={mobile ? 0 : 4} enableNormalPass={false}>
-        {fx('ao') ? <N8AO aoRadius={0.6} intensity={2.2} distanceFalloff={0.9} halfRes quality={mobile ? 'performance' : 'medium'} color="#2a1c10" /> : <></>}
-        {fx('dof') && !mobile && !reduce ? <DepthOfField ref={dof} worldFocusRange={2.6} bokehScale={2.2} /> : <></>}
-        {fx('bloom') ? <Bloom mipmapBlur luminanceThreshold={0.95} luminanceSmoothing={0.2} intensity={0.4} /> : <></>}
+        {fx('ao') ? <N8AO ref={ao as never} aoRadius={0.6} intensity={2.2} distanceFalloff={0.9} halfRes={aoHalf} quality={mobile ? 'performance' : 'medium'} color="#2a1c10" /> : <></>}
+        {fx('dof') && !mobile && !reduce ? <DepthOfField ref={dof} worldFocusRange={5.5} bokehScale={1.1} /> : <></>}
+        {/* only real light sources bloom (lamp, door, seam); the lit glass stays crisp */}
+        {fx('bloom') ? <Bloom mipmapBlur luminanceThreshold={1.25} luminanceSmoothing={0.1} intensity={0.32} /> : <></>}
         <ToneMapping mode={ToneMappingMode.NEUTRAL} />
         <Vignette offset={0.32} darkness={0.36} />
-        <Noise opacity={0.03} />
+        {fx('sharpen') ? <primitive object={sharpen} /> : <></>}
+        <Noise opacity={0.018} />
       </EffectComposer>
     </>
   )
+}
+
+// Steps quality down when frames drop, and back up when they recover (resolution only).
+function QualityRig() {
+  const tier = useTier()
+  const setDpr = useThree((state) => state.setDpr)
+  useEffect(() => {
+    setDpr(Math.min(window.devicePixelRatio || 1, TIERS[tier].dpr))
+    if (flag('perf')) Object.assign(window, { __benchTier: tier })
+  }, [setDpr, tier])
+  return (
+    <PerformanceMonitor
+      flipflops={3}
+      onDecline={() => setTier(getTier() + 1)}
+      onIncline={() => setTier(getTier() - 1)}
+      onFallback={() => setTier(TIERS.length - 1)}
+    />
+  )
+}
+
+// Wait for the textures, compile every shader off the main thread, then render a few frames
+// while the canvas is still hidden (post-processing and shadow shaders compile on first use),
+// and only then let the room fade in.
+function Warmup({ onReady, onShown }: { onReady: () => void; onShown: () => void }) {
+  const { gl, scene, camera } = useThree()
+  const frames = useRef(-1)
+  useFrame(() => {
+    if (frames.current < 0) return
+    frames.current += 1
+    if (frames.current === 3) onShown()
+  })
+  useEffect(() => {
+    let alive = true
+    const done = () => {
+      if (flag('perf')) Object.assign(window, { __benchWarm: gl.info.programs?.map((pr) => pr.name) ?? [], __warmKeys: gl.info.programs?.map((pr) => pr.cacheKey) ?? [] })
+      if (!alive) return
+      frames.current = 0
+      requestAnimationFrame(onReady)
+    }
+    // The composer renders the scene into a linear HDR target, not the screen; shader variants
+    // depend on that (tone mapping, output colour space), so compile against such a target.
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType })
+    texturesReady()
+      .then(() => {
+        const prev = gl.getRenderTarget()
+        gl.setRenderTarget(target)
+        const compiling = gl.compileAsync(scene, camera)
+        gl.setRenderTarget(prev)
+        return compiling
+      })
+      .then(done, done)
+      .finally(() => target.dispose())
+    return () => {
+      alive = false
+    }
+  }, [camera, gl, onReady, scene])
+  return null
 }
 
 function World({
   mobile,
   onHover,
   onPick,
+  onReady,
+  onShown,
 }: {
   mobile: boolean
   onHover: (id: string | null) => void
   onPick: (id: string) => void
+  onReady: () => void
+  onShown: () => void
 }) {
   return (
     <>
+      <QualityRig />
       <DayRig mobile={mobile} />
       {fx('env') ? <Reflections /> : null}
       <CameraRig mobile={mobile} />
@@ -256,6 +373,8 @@ function World({
       {fx('shafts') ? <Shafts mobile={mobile} /> : null}
       {fx('dust') ? <Dust mobile={mobile} /> : null}
       {flag('post') !== '0' ? <Post mobile={mobile} /> : null}
+      {/* last: its effect runs after fog, environment and lights are in place */}
+      <Warmup onReady={onReady} onShown={onShown} />
     </>
   )
 }
@@ -270,22 +389,35 @@ export function FruitScene({
   onFail?: () => void
 }) {
   const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  const [ready, setReady] = useState(false)
+  const [shown, setShown] = useState(false)
+  const onReady = useMemo(() => () => setReady(true), [])
+  const onShown = useMemo(() => () => setShown(true), [])
+  // phones start one step down
+  const [startDpr] = useState(() => {
+    if (mobile && getTier() === 0) setTier(1)
+    return Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, TIERS[getTier()].dpr)
+  })
   return (
-    <div className="fruit-canvas">
+    <div className={`fruit-canvas${shown ? ' is-ready' : ''}`}>
       <SceneErrorBoundary>
         <Canvas
           gl={{ antialias: true, alpha: false, powerPreference: 'high-performance', stencil: false }}
-          dpr={mobile ? [1, 1.5] : [1, 2]}
+          dpr={startDpr}
           camera={{ fov: mobile ? 52 : 42, near: 0.06, far: 140, position: CAMERA_POS[0] }}
-          shadows={mobile ? false : { type: THREE.PCFSoftShadowMap }}
+          // three 0.186 dropped PCFSoftShadowMap and swaps it at first render, which invalidated every
+          // pre-compiled shader; ask for PCF directly
+          shadows={mobile ? false : { type: THREE.PCFShadowMap }}
           resize={{ scroll: false }}
-          onCreated={({ camera, gl }) => {
+          frameloop={ready ? 'always' : 'never'}
+          onCreated={({ camera, gl, scene }) => {
+            if (flag('perf')) Object.assign(window, { __benchGl: gl, __benchScene: scene })
             camera.lookAt(CAMERA_LOOK[0][0], CAMERA_LOOK[0][1], CAMERA_LOOK[0][2])
             gl.domElement.setAttribute('aria-hidden', 'true')
             void onFail
           }}
         >
-          <World mobile={mobile} onHover={onHover} onPick={onPick} />
+          <World mobile={mobile} onHover={onHover} onPick={onPick} onReady={onReady} onShown={onShown} />
         </Canvas>
       </SceneErrorBoundary>
     </div>

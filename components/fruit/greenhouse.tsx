@@ -100,7 +100,8 @@ function frameGeometry() {
   b.box(0.08, ENTRY_H, 0.1, [-ENTRY_W / 2 - 0.04, ENTRY_H / 2, 0])
   b.box(0.08, ENTRY_H, 0.1, [ENTRY_W / 2 + 0.04, ENTRY_H / 2, 0])
   b.box(ENTRY_W + 0.16, 0.08, 0.1, [0, ENTRY_H + 0.04, 0])
-  b.box(HALF * 2, 0.05, 0.06, [0, MID, 0])
+  const side = HALF - ENTRY_W / 2 - 0.08
+  for (const s of [-1, 1]) b.box(side, 0.05, 0.06, [s * (ENTRY_W / 2 + 0.08 + side / 2), MID, 0])
   // finial
   b.add(new THREE.SphereGeometry(0.06, 12, 8), [0, RIDGE + 0.2, -0.02])
   b.add(new THREE.ConeGeometry(0.025, 0.22, 8), [0, RIDGE + 0.36, -0.02])
@@ -323,10 +324,10 @@ function Masonry() {
   const stone = bumpTex(5, 12)
   return (
     <group>
-      <mesh geometry={walls} castShadow receiveShadow>
+      <mesh geometry={walls} castShadow receiveShadow userData={{ occluder: true }}>
         <meshStandardMaterial map={brick} roughness={0.92} bumpMap={brick} bumpScale={1.2} />
       </mesh>
-      <mesh geometry={end} castShadow receiveShadow>
+      <mesh geometry={end} castShadow receiveShadow userData={{ occluder: true }}>
         <meshStandardMaterial map={lime} roughness={0.95} bumpMap={lime} bumpScale={1.2} />
       </mesh>
       <mesh geometry={coping} castShadow receiveShadow>
@@ -339,7 +340,7 @@ function Masonry() {
 function Frame() {
   const geo = useMemo(frameGeometry, [])
   return (
-    <mesh geometry={geo} castShadow receiveShadow>
+    <mesh geometry={geo} castShadow receiveShadow userData={{ occluder: true }}>
       <meshStandardMaterial color="#2f322a" roughness={0.5} metalness={0.3} side={THREE.DoubleSide} />
     </mesh>
   )

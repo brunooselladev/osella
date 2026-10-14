@@ -5,6 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { MeshTransmissionMaterial } from '@react-three/drei'
 import * as THREE from 'three'
 import { TRAY_TOP } from '../props'
+import { TIERS, useTier } from '../quality'
 import { bladeGeometry, hinge, openable, profiles, Rim, taperTube, useSpecimen, wobble, type Vec3 } from './shared'
 
 // Glass fruit, lime. A lit core and five seeds float inside; ripening draws a glowing seam,
@@ -50,6 +51,11 @@ export function Bucked({ position, mobile }: { position: Vec3; mobile: boolean }
     })
   }, [pts])
   const bodyMesh = useRef<THREE.Mesh>(null)
+  const glass = useRef<THREE.Material>(null)
+  const tier = useTier()
+  const sphere = useMemo(() => new THREE.Sphere(new THREE.Vector3(...position), R * 2.2), [position])
+  const frustum = useMemo(() => new THREE.Frustum(), [])
+  const viewProj = useMemo(() => new THREE.Matrix4(), [])
   useLayoutEffect(() => {
     bodyMesh.current?.updateMorphTargets()
   }, [body])
@@ -66,7 +72,13 @@ export function Bucked({ position, mobile }: { position: Vec3; mobile: boolean }
   const petal = useMemo(() => bladeGeometry(0.11, 0.075, profiles.petal, 0.5, 0.15, 10, 5), [])
   const seed = useMemo(() => new THREE.SphereGeometry(0.03, 14, 10).scale(0.6, 1, 0.45), [])
 
-  useFrame((_, dt) => {
+  useFrame(({ camera }, dt) => {
+    // The glass re-renders the whole room into its own buffer every frame; skip that when it can't be seen.
+    if (glass.current) {
+      viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      frustum.setFromProjectionMatrix(viewProj)
+      glass.current.visible = frustum.intersectsSphere(sphere)
+    }
     const ripen = state.current.ripen
     const k = 1 - Math.exp(-6 * dt)
     const open = state.current.open
@@ -74,8 +86,8 @@ export function Bucked({ position, mobile }: { position: Vec3; mobile: boolean }
     if (m?.morphTargetInfluences) m.morphTargetInfluences[0] = open
     if (seam.current) seam.current.emissiveIntensity += (Math.max(0, ripen - 0.9) * 1.4 - seam.current.emissiveIntensity) * k
     if (seam.current) seam.current.opacity = Math.min(1, Math.max(0, ripen - 0.7) * 1.4) * (1 - Math.min(1, open * 6))
-    if (blush.current) blush.current.emissiveIntensity += (0.04 + ripen * 0.16 - blush.current.emissiveIntensity) * k
-    if (core.current) core.current.emissiveIntensity += (0.18 + ripen * 0.1 + open * 0.35 - core.current.emissiveIntensity) * k
+    if (blush.current) blush.current.emissiveIntensity += (0.08 + ripen * 0.38 - blush.current.emissiveIntensity) * k
+    if (core.current) core.current.emissiveIntensity += (0.42 + ripen * 0.24 + open * 0.3 - core.current.emissiveIntensity) * k
     if (petals.current) {
       const open = THREE.MathUtils.smoothstep(ripen, 0.6, 2)
       petals.current.children.forEach((p) => {
@@ -99,7 +111,8 @@ export function Bucked({ position, mobile }: { position: Vec3; mobile: boolean }
               <meshPhysicalMaterial color="#d3e47e" transmission={1} thickness={0.5} roughness={0.08} ior={1.46} attenuationColor="#a3bb3c" attenuationDistance={0.55} clearcoat={1} clearcoatRoughness={0.05} side={THREE.DoubleSide} />
             ) : (
               <MeshTransmissionMaterial
-                color="#e2eea2"
+                ref={glass as never}
+                color="#e8f2b2"
                 transmission={1}
                 thickness={0.36}
                 roughness={0.05}
@@ -109,13 +122,15 @@ export function Bucked({ position, mobile }: { position: Vec3; mobile: boolean }
                 distortion={0.12}
                 distortionScale={0.35}
                 temporalDistortion={0.04}
-                attenuationColor="#aac446"
-                attenuationDistance={0.85}
-                envMapIntensity={1.1}
+                attenuationColor="#b2cb4c"
+                attenuationDistance={1.15}
+                emissive="#c3d865"
+                emissiveIntensity={0.05}
+                envMapIntensity={1.35}
                 clearcoat={1}
                 clearcoatRoughness={0.04}
                 samples={6}
-                resolution={768}
+                resolution={TIERS[tier].glass}
                 backside={false}
               />
             )}

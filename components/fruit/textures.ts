@@ -1,8 +1,20 @@
 import * as THREE from 'three'
+import { BAKED } from './baked'
 
-// Procedural canvas textures. Zero download, deterministic, generated once per page.
+// Procedural canvas textures, deterministic. In production they are served pre-baked as WebP
+// (public/fruit/tex, made by `?bake=1`) and decoded off the main thread; the generators stay
+// as the fallback and as the source of truth.
 
 const cache = new Map<string, THREE.Texture>()
+const pending: Promise<void>[] = []
+const baking = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bake')
+
+/** Resolves once every texture requested so far has its pixels. */
+export function texturesReady() {
+  return Promise.all(pending).then(() => undefined)
+}
+
+type Opts = { color?: boolean; repeat?: boolean }
 
 export function rng(seed: number) {
   let s = seed >>> 0 || 1
@@ -26,15 +38,57 @@ function finish(c: HTMLCanvasElement, color = true, repeat = true) {
   const tex = new THREE.CanvasTexture(c)
   tex.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
   if (repeat) tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.anisotropy = 8
+  tex.anisotropy = 16
   tex.needsUpdate = true
   return tex
 }
 
-function once(key: string, make: () => THREE.Texture) {
+function loadBaked(key: string, make: () => THREE.Texture, { color = true, repeat = true }: Opts) {
+  const tex = new THREE.Texture()
+  tex.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
+  if (repeat) tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.anisotropy = 16
+  tex.flipY = false
+  tex.premultiplyAlpha = false
+  pending.push(
+    new Promise<void>((resolve) => {
+      const fallback = () => {
+        const made = make()
+        tex.image = made.image
+        tex.flipY = true
+        tex.needsUpdate = true
+        resolve()
+      }
+      new THREE.ImageBitmapLoader()
+        .setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        .load(
+          `/fruit/tex/${key}.webp`,
+          (bitmap) => {
+            tex.image = bitmap
+            tex.needsUpdate = true
+            resolve()
+          },
+          undefined,
+          fallback,
+        )
+    }),
+  )
+  return tex
+}
+
+function once(key: string, make: () => THREE.Texture, opts: Opts = {}) {
   const hit = cache.get(key)
   if (hit) return hit
+  if (!baking && BAKED.includes(key)) {
+    const baked = loadBaked(key, make, opts)
+    cache.set(key, baked)
+    return baked
+  }
+  const t0 = performance.now()
   const tex = make()
+  const w = window as Window & { __benchPerf?: Record<string, number>; __bake?: Record<string, string> }
+  if (w.__benchPerf) w.__benchPerf[`tex:${key}`] = performance.now() - t0
+  if (baking) (w.__bake ??= {})[key] = (tex.image as HTMLCanvasElement).toDataURL('image/webp', 0.9)
   cache.set(key, tex)
   return tex
 }
@@ -268,7 +322,7 @@ export function bumpTex(seed = 3, base = 16) {
     const n = fbm(size, seed, 4, base)
     paintNoise(ctx, size, n, (v) => [v * 255, v * 255, v * 255])
     return finish(c, false)
-  })
+  }, { color: false })
 }
 
 /** Long fibres running along V, for the seed pod. */
@@ -346,7 +400,7 @@ export function leafTex() {
     }
     overlayGrain(ctx, size, 4, 0.25)
     return finish(c, true, false)
-  })
+  }, { repeat: false })
 }
 
 /** Soft canopy shadows seen through the whitewashed glass. Greyscale. */
@@ -377,7 +431,7 @@ export function foliageTex() {
     }
     ctx.filter = 'none'
     return finish(c, false)
-  })
+  }, { color: false })
 }
 
 /** A tree silhouette with alpha, for the cards outside the glass. */
@@ -408,7 +462,7 @@ export function treeTex(seed: number) {
     ctx.globalAlpha = 1
     ctx.filter = 'none'
     return finish(c, false, false)
-  })
+  }, { color: false, repeat: false })
 }
 
 /** Scales a BoxGeometry's UVs to metres and turns the grain along the box's longest side. */

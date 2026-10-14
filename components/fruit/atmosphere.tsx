@@ -205,7 +205,7 @@ export function Shafts({ mobile }: { mobile: boolean }) {
   useFrame(({ clock }) => {
     mat.uniforms.uSun.value.copy(day.sunDir)
     mat.uniforms.uColor.value.copy(day.sunColor)
-    mat.uniforms.uI.value = day.shafts * 0.07 * Math.min(1, day.sunI / 2.5)
+    mat.uniforms.uI.value = day.shafts * 0.045 * Math.min(1, day.sunI / 2.5)
     mat.uniforms.uTime.value = live.reduce ? 0 : clock.elapsedTime
   })
   return <mesh geometry={geo} material={mat} frustumCulled={false} renderOrder={5} />
