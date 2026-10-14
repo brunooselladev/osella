@@ -48,7 +48,6 @@ function paintRoot(root: HTMLElement | null, progress: number, sheetOpen: boolea
   root.style.setProperty('--bench', progress.toFixed(4))
   root.dataset.lens = lens
   root.dataset.hero = progress < 0.18 && !sheetOpen ? 'on' : 'off'
-  root.dataset.caption = progress < 0.08 && !sheetOpen ? 'on' : 'off'
   root.dataset.door = progress >= 0.9 && !sheetOpen ? 'on' : 'off'
   if (hud) hud.textContent = `${progress.toFixed(2)} / ${langHud}`
 }
@@ -263,7 +262,7 @@ export function BenchApp({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
   }, [cases, closeSheet, goStep, selectCase])
 
   return (
-    <div ref={rootRef} className={`fruit-root${useGl ? ' has-gl' : ''}`} data-lens={lens} data-hero="on" data-caption="on" data-door="off">
+    <div ref={rootRef} className={`fruit-root${useGl ? ' has-gl' : ''}`} data-lens={lens} data-hero="on" data-door="off">
       <div ref={pinRef} className="fruit-pin" aria-hidden="true" />
       <div className="fruit-stage">
         <p className="sr-only">{ui.room}</p>

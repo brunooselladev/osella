@@ -118,8 +118,6 @@ export function FruitChrome({
         <p>{support}</p>
       </div>
 
-      <p className="fruit-caption">{ui.caption}</p>
-
       {selected && !sheetOpen ? (
         <div className="fruit-tag">
           <small>{String(cases.findIndex((item) => item.id === selected.id) + 1).padStart(2, '0')}</small>

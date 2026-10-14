@@ -417,33 +417,15 @@ html:has(.fruit-root).lenis body {
 }
 
 .fruit-hero,
-.fruit-caption,
 .fruit-door {
   transition: opacity 280ms var(--ease), visibility 280ms var(--ease);
 }
 
 .fruit-root[data-hero='off'] .fruit-hero,
-.fruit-root[data-caption='off'] .fruit-caption,
 .fruit-root[data-door='off'] .fruit-door {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-}
-
-.fruit-caption {
-  position: absolute;
-  left: clamp(20px, 2.8vw, 40px);
-  bottom: 76px;
-  width: min(420px, 70vw);
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.7;
-  letter-spacing: 0.02em;
-  z-index: 5;
-}
-
-.fruit-caption.is-gone {
-  opacity: 0;
 }
 
 .fruit-hud {
@@ -1083,10 +1065,6 @@ html:has(.fruit-root).lenis body {
     width: calc(100vw - 32px);
   }
 
-  .fruit-caption {
-    display: none;
-  }
-
   .fruit-hud {
     left: 16px;
     right: 16px;
@@ -1144,7 +1122,6 @@ html:has(.fruit-root).lenis body {
 @media (prefers-reduced-motion: reduce) {
   .fruit-root .fruit-sheet,
   .fruit-root .fruit-hero,
-  .fruit-root .fruit-caption,
   .fruit-root .fruit-door,
   .fruit-root .fruit-pass,
   .fruit-root .fruit-sheet-track,
