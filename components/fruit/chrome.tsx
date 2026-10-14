@@ -113,6 +113,7 @@ export function FruitChrome({
         ))}
       </div>
 
+      <div className="fruit-hero-veil" aria-hidden="true" />
       <div className="fruit-hero">
         <h1>{headline}</h1>
         <p>{support}</p>

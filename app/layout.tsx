@@ -7,7 +7,7 @@ import './globals.css'
 
 const space = Space_Grotesk({ subsets: ['latin'], variable: '--font-space' })
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono' })
-const cormorant = Cormorant_Garamond({ subsets: ['latin'], variable: '--font-serif', weight: '400', style: ['normal', 'italic'] })
+const cormorant = Cormorant_Garamond({ subsets: ['latin'], variable: '--font-serif', weight: ['400', '500'], style: ['normal', 'italic'] })
 const karla = Karla({ subsets: ['latin'], variable: '--font-karla' })
 const pixel = Press_Start_2P({ subsets: ['latin'], weight: '400', variable: '--font-pixel' })
 const plex = IBM_Plex_Sans({ subsets: ['latin'], variable: '--font-plex' })
