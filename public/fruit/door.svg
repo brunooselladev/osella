@@ -1,0 +1,78 @@
+<svg width="1440" height="900" viewBox="0 0 1440 900" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="dWedge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD9A0" stop-opacity="0.55"></stop><stop offset="1" stop-color="#E0566B" stop-opacity="0"></stop></linearGradient>
+<linearGradient id="dBeam" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FFD9A0" stop-opacity="0.16"></stop><stop offset="1" stop-color="#FFD9A0" stop-opacity="0"></stop></linearGradient>
+<radialGradient id="dPool" cx="1072" cy="714" r="200" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFCF92" stop-opacity="0.75"></stop><stop offset="0.5" stop-color="#E9955A" stop-opacity="0.22"></stop><stop offset="1" stop-color="#E9955A" stop-opacity="0"></stop></radialGradient>
+<radialGradient id="dSpill" cx="1072" cy="660" r="420" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#F2B072" stop-opacity="0.2"></stop><stop offset="1" stop-color="#F2B072" stop-opacity="0"></stop></radialGradient>
+<radialGradient id="dDoorGlow" cx="720" cy="520" r="360" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#F6B66E" stop-opacity="0.22"></stop><stop offset="1" stop-color="#F6B66E" stop-opacity="0"></stop></radialGradient>
+<radialGradient id="dVig" cx="720" cy="470" r="880" gradientUnits="userSpaceOnUse"><stop offset="0.5" stop-color="#000000" stop-opacity="0"></stop><stop offset="1" stop-color="#000000" stop-opacity="0.45"></stop></radialGradient>
+<linearGradient id="dWin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBD8A2"></stop><stop offset="1" stop-color="#E9A066"></stop></linearGradient>
+<clipPath id="dBenchC"><polygon points="1058,869 1526,869 1061,621 863,621"></polygon></clipPath>
+<filter id="D2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2"></feGaussianBlur></filter>
+<filter id="D6" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"></feGaussianBlur></filter>
+<filter id="D14" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"></feGaussianBlur></filter>
+<filter id="D30" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+<filter id="dGrain"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+</defs>
+
+<rect width="1440" height="900" fill="#14130F"></rect>
+<polygon points="320,260 700,120 1040,250 1616,-92 664,-456 -400,-64" fill="#1A1A17"></polygon>
+<polygon points="320,260 -400,-64 -400,1056 320,660" fill="#1D1C18"></polygon>
+<polygon points="1040,250 1616,-92 1616,1112 1040,680" fill="#211E18"></polygon>
+<polygon points="320,660 1040,680 1616,1112 -400,1056" fill="#191611"></polygon>
+<polygon points="320,660 320,260 700,120 1040,250 1040,680" fill="#22231E"></polygon>
+<rect width="1440" height="900" fill="url(#dSpill)"></rect>
+<rect width="1440" height="900" fill="url(#dDoorGlow)"></rect>
+
+<g stroke="#3D3A30" fill="none" stroke-linecap="round">
+<path d="M400,231 L400,662 M480,201 L480,664 M560,172 L560,667 M880,189 L880,676 M960,220 L960,678 M320,340 L620,340 M820,340 L1040,340 M320,520 L620,520 M820,520 L1040,520" stroke-width="2.5" opacity="0.9"></path>
+<polyline points="320,660 320,260 700,120 1040,250 1040,680" stroke-width="5"></polyline>
+<path d="M320,260 L-400,-64 M1040,250 L1616,-92 M700,120 L664,-456 M320,660 L-400,1056 M1040,680 L1616,1112" stroke-width="3" opacity="0.8"></path>
+<polyline points="40,814 40,134 686,-104 1264,117 1264,848" stroke-width="9" stroke="#2E2B23"></polyline>
+<path d="M180,174 L180,737 M1152,174 L1152,764 M320,500 L-400,800 M1040,505 L1616,830" stroke-width="2" opacity="0.7"></path>
+</g>
+<g fill="#F7EFE1" opacity="0.12"><circle cx="420" cy="420" r="1.2"></circle><circle cx="444" cy="452" r="0.9"></circle><circle cx="508" cy="590" r="1.4"></circle><circle cx="900" cy="410" r="1"></circle><circle cx="934" cy="462" r="1.3"></circle><circle cx="990" cy="600" r="1"></circle><circle cx="140" cy="300" r="1.4"></circle><circle cx="230" cy="520" r="1"></circle><circle cx="1220" cy="330" r="1.2"></circle><circle cx="1300" cy="560" r="1"></circle></g>
+<ellipse cx="985" cy="560" rx="40" ry="60" fill="#FFCF92" opacity="0.12" filter="url(#D14)"></ellipse>
+
+<polygon points="620,672 820,676 1080,900 380,900" fill="url(#dWedge)" filter="url(#D14)"></polygon>
+<polygon points="620,360 620,672 120,900 -100,900 -100,640" fill="url(#dBeam)" opacity="0.5" filter="url(#D30)" transform="scale(-1,1) translate(-1440,0)"></polygon>
+
+<rect x="608" y="348" width="224" height="326" fill="#2C271F"></rect>
+<g filter="url(#D14)" opacity="0.9"><rect x="618" y="356" width="204" height="316" fill="none" stroke="#F6B66E" stroke-width="16"></rect></g>
+<g filter="url(#D6)"><rect x="618" y="356" width="204" height="316" fill="none" stroke="#E0566B" stroke-width="6" opacity="0.5"></rect></g>
+<rect x="618" y="356" width="204" height="316" fill="none" stroke="#FFF1D6" stroke-width="2.5"></rect>
+<rect x="621" y="359" width="198" height="310" fill="#2A241B"></rect>
+<rect x="648" y="384" width="144" height="96" fill="url(#dWin)" opacity="0.7"></rect>
+<path d="M720,384 L720,480 M648,432 L792,432" stroke="#2A241B" stroke-width="5"></path>
+<rect x="648" y="384" width="144" height="96" fill="#FFE7BD" opacity="0.35" filter="url(#D6)"></rect>
+<g fill="none" stroke="#3B3226" stroke-width="2"><rect x="648" y="508" width="62" height="134"></rect><rect x="730" y="508" width="62" height="134"></rect></g>
+<path d="M650,500 L790,500" stroke="#FFCF92" stroke-width="1" opacity="0.18"></path>
+<circle cx="800" cy="530" r="5" fill="#C99A5E"></circle>
+<rect x="619" y="667" width="202" height="5" fill="#FFF1D6"></rect>
+<rect x="600" y="340" width="240" height="340" fill="none" stroke="#E0566B" stroke-width="1" opacity="0.75"></rect>
+
+<polygon points="863,621 1058,869 1058,973 863,665" fill="#2B2219"></polygon>
+<polygon points="1058,869 1526,869 1061,621 863,621" fill="#3A2C1F"></polygon>
+<g clip-path="url(#dBenchC)">
+<path d="M890,621 L1120,869 M930,621 L1200,869 M970,621 L1280,869 M1010,621 L1360,869 M1050,621 L1440,869" stroke="#22190F" stroke-width="1.5" opacity="0.6" fill="none"></path>
+<rect x="860" y="600" width="700" height="300" fill="url(#dPool)"></rect>
+</g>
+
+<g transform="translate(1072,704)">
+<ellipse cx="0" cy="0" rx="34" ry="8" fill="#14130F" opacity="0.6"></ellipse>
+<ellipse cx="0" cy="-4" rx="26" ry="6" fill="#8A6A3E"></ellipse>
+<rect x="-2.5" y="-60" width="5" height="56" fill="#9C7A46"></rect>
+<path d="M-38,-56 C-34,-88 34,-88 38,-56 Z" fill="#B48A4E"></path>
+<path d="M-38,-56 C-34,-88 -10,-90 4,-86" fill="none" stroke="#E6C38A" stroke-width="2" opacity="0.8"></path>
+<ellipse cx="0" cy="-56" rx="38" ry="7" fill="#FFE2AE"></ellipse>
+<ellipse cx="0" cy="-46" rx="60" ry="30" fill="#FFD9A0" opacity="0.5" filter="url(#D14)"></ellipse>
+<circle cx="0" cy="-52" r="9" fill="#FFF6E2" filter="url(#D2)"></circle>
+</g>
+<polygon points="1034,-30 1110,-30 1160,650 984,650" fill="#FFD9A0" opacity="0.04" filter="url(#D30)"></polygon>
+
+<g fill="#FFE7BD">
+<circle cx="700" cy="610" r="1.2" opacity="0.7"></circle><circle cx="760" cy="640" r="1" opacity="0.6"></circle><circle cx="680" cy="700" r="1.5" opacity="0.5"></circle><circle cx="790" cy="720" r="1" opacity="0.6"></circle><circle cx="1100" cy="560" r="1.2" opacity="0.6"></circle><circle cx="1040" cy="600" r="1" opacity="0.5"></circle><circle cx="1120" cy="620" r="1.6" opacity="0.4" filter="url(#D2)"></circle>
+</g>
+<rect width="1440" height="900" fill="url(#dVig)"></rect>
+<rect width="1440" height="900" filter="url(#dGrain)" opacity="0.05" style="mix-blend-mode: screen"></rect>
+</svg>

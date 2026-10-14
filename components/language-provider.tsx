@@ -9,6 +9,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null)
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>('en')
   useEffect(() => { const stored = window.localStorage.getItem('bo_lang') as Lang | null; if (stored === 'en' || stored === 'es') setLangState(stored) }, [])
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
   const setLang = (next: Lang) => { setLangState(next); window.localStorage.setItem('bo_lang', next) }
   return <LanguageContext.Provider value={{ lang, setLang, content: getContent(lang) }}>{children}</LanguageContext.Provider>
 }
