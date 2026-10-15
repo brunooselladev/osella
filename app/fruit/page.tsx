@@ -1,16 +1,26 @@
+// /fruit: builds the bench's cases from content/ on the server and hands them to BenchApp.
+
+// ===== External modules =====
 import { Suspense } from 'react'
+
+// ===== Internal modules =====
 import { publishedCases, sheetFields } from '@/content/cases'
 import { identity } from '@/content/identity'
 import { BenchApp } from '@/components/fruit/bench-app'
 import type { BenchCase, BenchStory } from '@/components/fruit/types'
 import type { CaseStudy, Lang } from '@/content/types'
 
-function story(study: CaseStudy, lang: Lang): BenchStory {
+// ===== Helpers =====
+
+/** The fields the growth stages read, in one language. */
+const story = (study: CaseStudy, lang: Lang): BenchStory => {
   const { context, role, meta, rows, contribution, collective, outcome } = study[lang]
   return { context, role, meta, rows, contribution, collective, outcome }
 }
 
-export default function FruitPage() {
+// ===== Page =====
+
+const FruitPage = () => {
   const cases: BenchCase[] = publishedCases.map((study) => ({
     id: study.id,
     slug: study.slug,
@@ -19,6 +29,7 @@ export default function FruitPage() {
   }))
 
   return (
+    // Suspense: BenchApp reads the search params on the client
     <Suspense>
       <BenchApp
         cases={cases}
@@ -31,3 +42,5 @@ export default function FruitPage() {
     </Suspense>
   )
 }
+
+export default FruitPage

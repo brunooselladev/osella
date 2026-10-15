@@ -1,8 +1,14 @@
+// A light unsharp mask on the final, tone-mapped image: crisper edges without touching the
+// lighting. Post places it after tone mapping and before the grain.
+
+// ===== External modules =====
 import { Effect, EffectAttribute } from 'postprocessing'
 import { Uniform } from 'three'
 
-// A light unsharp mask on the final, tone-mapped image: crisper edges without touching the lighting.
-const fragment = /* glsl */ `
+// ===== Shaders =====
+
+// Subtracts a 4-tap blur from the pixel and adds the (clamped) difference back.
+const fragmentShader = /* glsl */ `
 uniform float amount;
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
   vec3 n = texture2D(inputBuffer, uv + vec2(texelSize.x, 0.0)).rgb
@@ -14,9 +20,13 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
 }
 `
 
+// ===== Class: SharpenEffect =====
+
 export class SharpenEffect extends Effect {
+  /** `amount` 0..1: how much of the detail to add back. */
   constructor(amount = 0.7) {
-    super('SharpenEffect', fragment, {
+    super('SharpenEffect', fragmentShader, {
+      // It samples neighbours, so postprocessing must not merge it with another convolution.
       attributes: EffectAttribute.CONVOLUTION,
       uniforms: new Map([['amount', new Uniform(amount)]]),
     })

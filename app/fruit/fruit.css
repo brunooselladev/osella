@@ -239,6 +239,26 @@ html:has(.fruit-root).lenis body {
   color: var(--fg);
 }
 
+/* the "/" between EN and ES, and the "·" between lenses */
+.fruit-sep {
+  color: var(--fg-2);
+}
+
+/* ?perf readout, appended to body by PerfRig */
+.fruit-perf {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  z-index: 60;
+  padding: 4px 8px;
+  font: 11px/1.5 ui-monospace, 'JetBrains Mono', monospace;
+  color: #f7efe1;
+  background: rgba(20, 19, 15, 0.75);
+  border-radius: 3px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 .fruit-skins {
   display: flex;
   align-items: center;

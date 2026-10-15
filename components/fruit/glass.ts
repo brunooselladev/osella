@@ -1,11 +1,19 @@
+// Whitewashed greenhouse glass, as a ShaderMaterial. Lime brushed on unevenly, putty at the edges,
+// algae low, canopy shadows from the trees outside. At night it turns into a dark mirror for the
+// lantern. The Panes and EntranceLeaves pieces own one material each and call `syncGlass` every
+// frame so it follows `day`.
+
+// ===== External modules =====
 import * as THREE from 'three'
+
+// ===== Internal modules =====
 import { day } from './day'
 import { foliageTex } from './textures'
+import { LAMP_POS } from './world'
 
-// Whitewashed greenhouse glass. Lime brushed on unevenly, putty at the edges, algae low,
-// canopy shadows from the trees outside. At night it turns into a dark mirror for the lamp.
+// ===== Shaders =====
 
-const vertex = /* glsl */ `
+const vertexShader = /* glsl */ `
 attribute float aSeed;
 varying vec3 vWorld;
 varying vec3 vN;
@@ -24,7 +32,7 @@ void main() {
 }
 `
 
-const fragment = /* glsl */ `
+const fragmentShader = /* glsl */ `
 uniform vec3 uMilk;
 uniform float uGlow;
 uniform float uNight;
@@ -39,6 +47,7 @@ varying vec2 vUv;
 varying float vSeed;
 #include <fog_pars_fragment>
 
+// --- noise: hash → value noise → 4-octave fbm, in world metres ---
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
   vec2 i = floor(p);
@@ -54,22 +63,26 @@ float fbm(vec2 p) {
 }
 
 void main() {
+  // --- surface frame: the normal facing the viewer, and a stable 2D coordinate on the pane's plane ---
   vec3 n = dot(vN, vN) > 1e-8 ? normalize(vN) : vec3(0.0, 1.0, 0.0);
   vec3 v = normalize(cameraPosition - vWorld);
   if (dot(n, v) < 0.0) n = -n;
   vec2 P = abs(n.x) > 0.5 ? vWorld.zy : (abs(n.z) > 0.5 ? vWorld.xy : vWorld.zx);
 
+  // --- lime wash: broad patches plus brush strokes; a few panes (seed > 0.94) were left almost clean ---
   float strokes = fbm(vec2(P.x * 2.4 + vSeed * 13.0, P.y * 8.0));
   float patches = smoothstep(0.3, 0.75, fbm(P * 0.55 + vSeed * 7.0));
   float wash = patches * 0.55 + strokes * 0.45;
   float clean = step(0.94, vSeed);
   float frost = mix(0.6 + wash * 0.4, 0.12 + wash * 0.18, clean) * uWash;
 
+  // --- putty at the pane edges, grime low on the pane, canopy shadow from the trees outside ---
   vec2 e = min(vUv, 1.0 - vUv);
   float edge = 1.0 - smoothstep(0.0, 0.045, min(e.x, e.y));
   float grime = 1.0 - smoothstep(0.0, 0.25, vUv.y);
   float shade = texture2D(uFoliage, P * 0.075 + vec2(vSeed * 0.04, 0.0)).r;
 
+  // --- day: milky colour, algae tint on some panes, darker putty, opacity from the wash ---
   vec3 col = uMilk * (0.9 + 0.12 * strokes) * (1.0 - 0.26 * shade * (1.0 - uNight)) * uGlow;
   col *= 1.0 - grime * 0.22;
   col = mix(col, col * vec3(0.82, 0.9, 0.66), grime * step(0.55, vSeed) * 0.7);
@@ -77,6 +90,7 @@ void main() {
   float alpha = mix(0.16, 0.93, frost);
   alpha = max(alpha, edge * 0.8);
 
+  // --- night: dark mirror with the lantern's highlight and a sky-coloured fresnel rim ---
   vec3 L = uLampPos - vWorld;
   float d = length(L);
   L /= d;
@@ -93,10 +107,13 @@ void main() {
 }
 `
 
-export function makeGlassMaterial(wash = 1) {
-  return new THREE.ShaderMaterial({
-    vertexShader: vertex,
-    fragmentShader: fragment,
+// ===== Helpers =====
+
+/** A new glass material. `wash` 0..1 scales how much lime is on it (the entrance leaves have less). */
+export const makeGlassMaterial = (wash = 1) =>
+  new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -108,24 +125,25 @@ export function makeGlassMaterial(wash = 1) {
         uGlow: { value: 1 },
         uNight: { value: 0 },
         uFoliage: { value: null },
-        uLampPos: { value: new THREE.Vector3(1.9, 1.3, 18.6) },
+        uLampPos: { value: new THREE.Vector3(...LAMP_POS) },
         uLamp: { value: 0 },
         uSkyLow: { value: new THREE.Color('#f4dcb4') },
         uWash: { value: wash },
       },
     ]),
   })
+
+/** Binds the foliage texture; called once the material is mounted (textures need the DOM). */
+export const initGlass = (material: THREE.ShaderMaterial) => {
+  material.uniforms.uFoliage.value = foliageTex()
 }
 
-export function initGlass(mat: THREE.ShaderMaterial) {
-  mat.uniforms.uFoliage.value = foliageTex()
-}
-
-export function syncGlass(mat: THREE.ShaderMaterial) {
-  const u = mat.uniforms
-  u.uMilk.value.copy(day.milk)
-  u.uGlow.value = day.glow
-  u.uNight.value = day.night
-  u.uLamp.value = day.lamp
-  u.uSkyLow.value.copy(day.skyLow)
+/** Copies what the glass needs from `day`. Call every frame. */
+export const syncGlass = (material: THREE.ShaderMaterial) => {
+  const uniforms = material.uniforms
+  uniforms.uMilk.value.copy(day.milk)
+  uniforms.uGlow.value = day.glow
+  uniforms.uNight.value = day.night
+  uniforms.uLamp.value = day.lamp
+  uniforms.uSkyLow.value.copy(day.skyLow)
 }

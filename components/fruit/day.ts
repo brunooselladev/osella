@@ -1,11 +1,19 @@
-import * as THREE from 'three'
-import type { Lens } from '@/content/types'
-
-// Sun vectors point at the sun; +x is screen-left (morning comes in from the left).
-// Time of day: 0 morning (Business) · 1 noon (Engineering) · 1.5 dusk · 2 night (Delivery).
+// The time of day and everything the light derives from it. Four keyframes, interpolated into the
+// shared `day` object once per frame by DayRig (useFrame priority -2); every other rig and shader
+// reads `day` after that. Sun vectors point at the sun; +x is screen-left (morning comes in from
+// the left). tod: 0 morning (Business) · 1 noon (Engineering) · 1.5 dusk · 2 night (Delivery).
 // Walking moves the sun continuously; picking a lens jumps the whole room to that lens.
 
-type Key = {
+// ===== External modules =====
+import * as THREE from 'three'
+
+// ===== Internal modules =====
+import type { Lens } from '@/content/types'
+
+// ===== Types =====
+
+/** One keyframe as written by hand: colours as hex, vectors as tuples. */
+type KeyframeSource = {
   sun: [number, number, number]
   sunColor: string
   sunI: number
@@ -26,7 +34,37 @@ type Key = {
   night: number
 }
 
-const KEYS: [number, Key][] = [
+/** The evaluated day, with three.js objects ready to copy into lights and uniforms. */
+export type Day = {
+  tod: number
+  sunDir: THREE.Vector3
+  sunColor: THREE.Color
+  sunI: number
+  sky: THREE.Color
+  ground: THREE.Color
+  hemiI: number
+  fog: THREE.Color
+  fogNear: number
+  fogFar: number
+  /** Colour of the lime wash on the glass. */
+  milk: THREE.Color
+  /** Brightness of the glass. */
+  glow: number
+  skyTop: THREE.Color
+  skyLow: THREE.Color
+  /** Environment map intensity. */
+  env: number
+  /** Light shafts, dust, lantern and night, each 0..1. */
+  shafts: number
+  dust: number
+  lamp: number
+  night: number
+}
+
+// ===== Constants =====
+
+/** tod → keyframe, in order. */
+const KEYFRAME_SOURCE: [number, KeyframeSource][] = [
   [
     0,
     {
@@ -121,29 +159,24 @@ const KEYS: [number, Key][] = [
   ],
 ]
 
-export type Day = {
-  tod: number
-  sunDir: THREE.Vector3
-  sunColor: THREE.Color
-  sunI: number
-  sky: THREE.Color
-  ground: THREE.Color
-  hemiI: number
-  fog: THREE.Color
-  fogNear: number
-  fogFar: number
-  milk: THREE.Color
-  glow: number
-  skyTop: THREE.Color
-  skyLow: THREE.Color
-  env: number
-  shafts: number
-  dust: number
-  lamp: number
-  night: number
-}
+/** The keyframes with their colours and vectors parsed once, so evalDay allocates nothing. */
+const KEYFRAMES = KEYFRAME_SOURCE.map(([tod, source]) => ({
+  tod,
+  source,
+  sun: new THREE.Vector3(...source.sun).normalize(),
+  sunColor: new THREE.Color(source.sunColor),
+  sky: new THREE.Color(source.sky),
+  ground: new THREE.Color(source.ground),
+  fog: new THREE.Color(source.fog),
+  milk: new THREE.Color(source.milk),
+  skyTop: new THREE.Color(source.skyTop),
+  skyLow: new THREE.Color(source.skyLow),
+}))
 
-// Shared, mutable. Written once per frame by DayRig (priority -2), read by everything else.
+/** Where each lens parks the day when the visitor clicks it. */
+export const LENS_TOD: Record<Lens, number> = { business: 0, engineering: 1, delivery: 2 }
+
+/** Shared, mutable. Written once per frame by DayRig, read by everything else. */
 export const day: Day = {
   tod: 0,
   sunDir: new THREE.Vector3(),
@@ -166,59 +199,47 @@ export const day: Day = {
   night: 0,
 }
 
-const C = KEYS.map(([t, k]) => ({
-  t,
-  k,
-  sun: new THREE.Vector3(...k.sun).normalize(),
-  sunColor: new THREE.Color(k.sunColor),
-  sky: new THREE.Color(k.sky),
-  ground: new THREE.Color(k.ground),
-  fog: new THREE.Color(k.fog),
-  milk: new THREE.Color(k.milk),
-  skyTop: new THREE.Color(k.skyTop),
-  skyLow: new THREE.Color(k.skyLow),
-}))
-
 const lerp = THREE.MathUtils.lerp
 
-export function evalDay(tod: number) {
-  const t = THREE.MathUtils.clamp(tod, 0, 2)
-  let i = 0
-  while (i < C.length - 2 && t > C[i + 1].t) i += 1
-  const a = C[i]
-  const b = C[i + 1]
-  const raw = (t - a.t) / (b.t - a.t)
-  const f = raw * raw * (3 - 2 * raw)
-  day.tod = t
-  day.sunDir.copy(a.sun).lerp(b.sun, f).normalize()
-  day.sunColor.copy(a.sunColor).lerp(b.sunColor, f)
-  day.sunI = lerp(a.k.sunI, b.k.sunI, f)
-  day.sky.copy(a.sky).lerp(b.sky, f)
-  day.ground.copy(a.ground).lerp(b.ground, f)
-  day.hemiI = lerp(a.k.hemiI, b.k.hemiI, f)
-  day.fog.copy(a.fog).lerp(b.fog, f)
-  day.fogNear = lerp(a.k.fogNear, b.k.fogNear, f)
-  day.fogFar = lerp(a.k.fogFar, b.k.fogFar, f)
-  day.milk.copy(a.milk).lerp(b.milk, f)
-  day.glow = lerp(a.k.glow, b.k.glow, f)
-  day.skyTop.copy(a.skyTop).lerp(b.skyTop, f)
-  day.skyLow.copy(a.skyLow).lerp(b.skyLow, f)
-  day.env = lerp(a.k.env, b.k.env, f)
-  day.shafts = lerp(a.k.shafts, b.k.shafts, f)
-  day.dust = lerp(a.k.dust, b.k.dust, f)
-  day.lamp = lerp(a.k.lamp, b.k.lamp, f)
-  day.night = lerp(a.k.night, b.k.night, f)
+// ===== Helpers =====
+
+/** Interpolates the two keyframes around `tod` (smoothstep eased) into `day`. */
+export const evalDay = (tod: number) => {
+  const clamped = THREE.MathUtils.clamp(tod, 0, 2)
+  let index = 0
+  while (index < KEYFRAMES.length - 2 && clamped > KEYFRAMES[index + 1].tod) index += 1
+  const from = KEYFRAMES[index]
+  const to = KEYFRAMES[index + 1]
+  const raw = (clamped - from.tod) / (to.tod - from.tod)
+  const mix = raw * raw * (3 - 2 * raw)
+  day.tod = clamped
+  day.sunDir.copy(from.sun).lerp(to.sun, mix).normalize()
+  day.sunColor.copy(from.sunColor).lerp(to.sunColor, mix)
+  day.sunI = lerp(from.source.sunI, to.source.sunI, mix)
+  day.sky.copy(from.sky).lerp(to.sky, mix)
+  day.ground.copy(from.ground).lerp(to.ground, mix)
+  day.hemiI = lerp(from.source.hemiI, to.source.hemiI, mix)
+  day.fog.copy(from.fog).lerp(to.fog, mix)
+  day.fogNear = lerp(from.source.fogNear, to.source.fogNear, mix)
+  day.fogFar = lerp(from.source.fogFar, to.source.fogFar, mix)
+  day.milk.copy(from.milk).lerp(to.milk, mix)
+  day.glow = lerp(from.source.glow, to.source.glow, mix)
+  day.skyTop.copy(from.skyTop).lerp(to.skyTop, mix)
+  day.skyLow.copy(from.skyLow).lerp(to.skyLow, mix)
+  day.env = lerp(from.source.env, to.source.env, mix)
+  day.shafts = lerp(from.source.shafts, to.source.shafts, mix)
+  day.dust = lerp(from.source.dust, to.source.dust, mix)
+  day.lamp = lerp(from.source.lamp, to.source.lamp, mix)
+  day.night = lerp(from.source.night, to.source.night, mix)
 }
 
-export const LENS_TOD: Record<Lens, number> = { business: 0, engineering: 1, delivery: 2 }
+const band = (progress: number, from: number, to: number) => THREE.MathUtils.smoothstep(progress, from, to)
 
-function band(p: number, a: number, b: number) {
-  return THREE.MathUtils.smoothstep(p, a, b)
-}
+/**
+ * The walk is one day: morning at the door, noon by Devias and Imperio, dusk at COOPEF,
+ * night at the end. Maps progress 0..1 to tod 0..2.
+ */
+export const todAt = (progress: number) => band(progress, 0.12, 0.38) + 0.5 * band(progress, 0.66, 0.82) + 0.5 * band(progress, 0.84, 0.95)
 
-// The walk is one day: morning at the door, noon by Devias and Imperio, dusk at COOPEF, night at the end.
-export function todAt(progress: number) {
-  return band(progress, 0.12, 0.38) + 0.5 * band(progress, 0.66, 0.82) + 0.5 * band(progress, 0.84, 0.95)
-}
-
+// Start the module with a valid morning so anything reading `day` before the first frame gets colours.
 evalDay(0)

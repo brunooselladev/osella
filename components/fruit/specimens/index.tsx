@@ -1,36 +1,53 @@
 'use client'
 
+// The four specimens on their stations, each wrapped in the pointer events that drive hover and
+// pick. Which component draws which case is decided here, by id.
+
+// ===== External modules =====
+import type { ThreeEvent } from '@react-three/fiber'
+
+// ===== Internal modules =====
 import { SPECIMENS } from '../camera-path'
+import { hiddenCases } from '../lookdev'
 import { Bucked } from './bucked'
 import { Coopef } from './coopef'
 import { Devias } from './devias'
 import { Imperio } from './imperio'
 
-export function Specimens({
-  mobile,
-  onHover,
-  onPick,
-}: {
+// ===== Types =====
+
+type SpecimensProps = {
   mobile: boolean
   onHover: (id: string | null) => void
   onPick: (id: string) => void
-}) {
-  const hide = typeof window === 'undefined' ? [] : (new URLSearchParams(window.location.search).get('hide') ?? '').split(',')
+}
+
+// ===== Component: Specimens =====
+
+export const Specimens = ({ mobile, onHover, onPick }: SpecimensProps) => {
+  // --- Derived ---
+  const hidden = hiddenCases()
+  const shown = SPECIMENS.filter((item) => !hidden.includes(item.id))
+
+  // --- Methods ---
+  const stop = (event: ThreeEvent<PointerEvent | MouseEvent>) => event.stopPropagation()
+
+  // --- Render ---
   return (
     <group>
-      {SPECIMENS.filter((item) => !hide.includes(item.id)).map((item) => (
+      {shown.map((item) => (
         <group
           key={item.id}
-          onPointerOver={(e) => {
-            e.stopPropagation()
+          onPointerOver={(event) => {
+            stop(event)
             onHover(item.id)
           }}
-          onPointerOut={(e) => {
-            e.stopPropagation()
+          onPointerOut={(event) => {
+            stop(event)
             onHover(null)
           }}
-          onClick={(e) => {
-            e.stopPropagation()
+          onClick={(event) => {
+            stop(event)
             onPick(item.id)
           }}
         >

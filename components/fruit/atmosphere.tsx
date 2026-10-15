@@ -1,115 +1,61 @@
 'use client'
 
+// What surrounds and fills the room: the sky dome, the trees outside the glass, the light shafts
+// and the dust. All of it reads `day` every frame; none of it is interactive.
+
+// ===== External modules =====
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+
+// ===== Internal modules =====
 import { live } from './bench-live'
 import { day } from './day'
 import { rng, treeTex } from './textures'
 import { EAVE, HALF, LENGTH, RIDGE } from './world'
 
-/* ---------------------------------------------------------------- sky */
+// ===== Types =====
 
-export function Sky() {
-  const mat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-        uniforms: {
-          uTop: { value: new THREE.Color() },
-          uLow: { value: new THREE.Color() },
-          uSun: { value: new THREE.Vector3() },
-          uSunColor: { value: new THREE.Color() },
-          uSunI: { value: 0 },
-        },
-        vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }`,
-        fragmentShader: `uniform vec3 uTop; uniform vec3 uLow; uniform vec3 uSun; uniform vec3 uSunColor; uniform float uSunI; varying vec3 vDir;
-          void main(){
-            float h = clamp(vDir.y, -0.2, 1.0);
-            vec3 col = mix(uLow, uTop, smoothstep(-0.02, 0.55, h));
-            float s = max(dot(normalize(vDir), normalize(uSun)), 0.0);
-            col += uSunColor * (pow(s, 12.0) * 0.35 + pow(s, 400.0) * 2.0) * uSunI;
-            gl_FragColor = vec4(col, 1.0);
-            #include <colorspace_fragment>
-          }`,
-      }),
-    [],
-  )
-  useFrame(({ camera }) => {
-    mat.uniforms.uTop.value.copy(day.skyTop)
-    mat.uniforms.uLow.value.copy(day.skyLow)
-    mat.uniforms.uSun.value.copy(day.sunDir)
-    mat.uniforms.uSunColor.value.copy(day.sunColor)
-    mat.uniforms.uSunI.value = Math.min(1, day.sunI / 3)
-    sky.current?.position.copy(camera.position)
-  })
-  const sky = useRef<THREE.Mesh>(null)
-  return (
-    <mesh ref={sky} material={mat} renderOrder={-10} frustumCulled={false}>
-      <sphereGeometry args={[70, 32, 16]} />
-    </mesh>
-  )
+type TreeCard = { position: [number, number, number]; rotation: number; height: number; seed: number }
+
+// ===== Constants =====
+
+/** How much the trees darken from the fog colour in daylight. */
+const TREE_SHADE = new THREE.Color('#5d5a45')
+/** The warm colour the dust takes at night, under the lantern. */
+const DUST_NIGHT = new THREE.Color('#ffc98e')
+
+// ===== Shaders =====
+
+// Sky: a vertical gradient with a soft and a sharp sun glow.
+const skyVertexShader = /* glsl */ `
+varying vec3 vDir;
+void main() {
+  vDir = normalize(position);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
+`
 
-/* ---------------------------------------------------------------- trees outside */
-
-export function Trees() {
-  const items = useMemo(() => {
-    const r = rng(404)
-    const out: { pos: [number, number, number]; rot: number; h: number; seed: number }[] = []
-    for (let i = 0; i < 16; i++) {
-      const s = i % 2 ? 1 : -1
-      const z = -6 + r() * (LENGTH + 14)
-      const x = s * (HALF + 3 + r() * 9)
-      const h = 6 + r() * 6
-      out.push({ pos: [x, h / 2 - 0.2, z], rot: Math.atan2(-x, 0) + (r() - 0.5) * 0.6, h, seed: 1 + Math.floor(r() * 3) })
-    }
-    for (let i = 0; i < 6; i++) {
-      const h = 7 + r() * 5
-      out.push({ pos: [-12 + r() * 24, h / 2 - 0.2, LENGTH + 4 + r() * 10], rot: Math.PI, h, seed: 1 + Math.floor(r() * 3) })
-    }
-    for (let i = 0; i < 5; i++) {
-      const h = 7 + r() * 5
-      const side = i % 2 ? 1 : -1
-      out.push({ pos: [side * (4 + r() * 10), h / 2 - 0.2, -10 - r() * 10], rot: 0, h, seed: 1 + Math.floor(r() * 3) })
-    }
-    return out
-  }, [])
-  const mats = useMemo(
-    () =>
-      [1, 2, 3].map(
-        (seed) =>
-          new THREE.MeshBasicMaterial({
-            color: '#8f8a6e',
-            alphaMap: treeTex(seed * 17),
-            transparent: true,
-            depthWrite: false,
-            side: THREE.DoubleSide,
-          }),
-      ),
-    [],
-  )
-  const tint = useMemo(() => new THREE.Color(), [])
-  useFrame(() => {
-    tint.copy(day.fog).lerp(new THREE.Color('#5d5a45'), 0.42 * (1 - day.night))
-    for (const m of mats) m.color.copy(tint)
-  })
-  return (
-    <group>
-      {items.map((t, i) => (
-        <mesh key={i} position={t.pos} rotation-y={t.rot} material={mats[t.seed - 1]} renderOrder={-5}>
-          <planeGeometry args={[t.h * 0.8, t.h]} />
-        </mesh>
-      ))}
-    </group>
-  )
+const skyFragmentShader = /* glsl */ `
+uniform vec3 uTop;
+uniform vec3 uLow;
+uniform vec3 uSun;
+uniform vec3 uSunColor;
+uniform float uSunI;
+varying vec3 vDir;
+void main() {
+  float h = clamp(vDir.y, -0.2, 1.0);
+  vec3 col = mix(uLow, uTop, smoothstep(-0.02, 0.55, h));
+  float s = max(dot(normalize(vDir), normalize(uSun)), 0.0);
+  col += uSunColor * (pow(s, 12.0) * 0.35 + pow(s, 400.0) * 2.0) * uSunI;
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
 }
+`
 
-/* ---------------------------------------------------------------- light shafts */
-
-const shaftVertex = /* glsl */ `
+// Shafts: each beam is a quad built in the vertex shader from its start point, the sun direction
+// and the corner it represents, so moving the sun re-aims every beam for free.
+const shaftVertexShader = /* glsl */ `
 attribute vec3 aStart;
 attribute vec2 aCorner;
 attribute float aSeed;
@@ -133,7 +79,7 @@ void main() {
 }
 `
 
-const shaftFragment = /* glsl */ `
+const shaftFragmentShader = /* glsl */ `
 uniform vec3 uColor;
 uniform float uI;
 uniform float uTime;
@@ -149,20 +95,159 @@ void main() {
 }
 `
 
-export function Shafts({ mobile }: { mobile: boolean }) {
-  const geo = useMemo(() => {
-    const r = rng(55)
+// Dust: points that drift on sine waves and fall slowly, fading with distance.
+const dustVertexShader = /* glsl */ `
+attribute float aSeed;
+uniform float uTime;
+uniform float uPx;
+varying float vA;
+void main() {
+  vec3 p = position;
+  float t = uTime * (0.03 + aSeed * 0.04);
+  p.x += sin(t * 6.0 + aSeed * 40.0) * 0.25;
+  p.y += mod(t + aSeed * 3.0, 3.4) - 1.7;
+  p.z += cos(t * 4.0 + aSeed * 20.0) * 0.25;
+  vec4 mv = viewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float d = -mv.z;
+  gl_PointSize = uPx * (1.2 + aSeed * 2.6) * (6.0 / max(d, 0.5));
+  vA = smoothstep(0.3, 1.5, d) * (1.0 - smoothstep(9.0, 16.0, d)) * (0.35 + aSeed * 0.65);
+}
+`
+
+const dustFragmentShader = /* glsl */ `
+uniform vec3 uColor;
+uniform float uI;
+varying float vA;
+void main() {
+  float r = length(gl_PointCoord - 0.5);
+  float a = smoothstep(0.5, 0.0, r);
+  gl_FragColor = vec4(uColor * a * vA * uI, 1.0);
+}
+`
+
+// ===== Component: Sky =====
+
+/** A dome that follows the camera, coloured by the day. */
+export const Sky = () => {
+  // --- Refs & state ---
+  const domeRef = useRef<THREE.Mesh>(null)
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        uniforms: {
+          uTop: { value: new THREE.Color() },
+          uLow: { value: new THREE.Color() },
+          uSun: { value: new THREE.Vector3() },
+          uSunColor: { value: new THREE.Color() },
+          uSunI: { value: 0 },
+        },
+        vertexShader: skyVertexShader,
+        fragmentShader: skyFragmentShader,
+      }),
+    [],
+  )
+
+  // --- Frame ---
+  useFrame(({ camera }) => {
+    material.uniforms.uTop.value.copy(day.skyTop)
+    material.uniforms.uLow.value.copy(day.skyLow)
+    material.uniforms.uSun.value.copy(day.sunDir)
+    material.uniforms.uSunColor.value.copy(day.sunColor)
+    material.uniforms.uSunI.value = Math.min(1, day.sunI / 3)
+    domeRef.current?.position.copy(camera.position)
+  })
+
+  // --- Render ---
+  return (
+    <mesh ref={domeRef} material={material} renderOrder={-10} frustumCulled={false}>
+      <sphereGeometry args={[70, 32, 16]} />
+    </mesh>
+  )
+}
+
+// ===== Component: Trees =====
+
+/** Flat tree silhouettes outside the glass: along both sides, behind the end wall, before the entrance. */
+export const Trees = () => {
+  // --- Refs & state ---
+  const cards = useMemo(() => {
+    const random = rng(404)
+    const out: TreeCard[] = []
+    for (let i = 0; i < 16; i++) {
+      const side = i % 2 ? 1 : -1
+      const z = -6 + random() * (LENGTH + 14)
+      const x = side * (HALF + 3 + random() * 9)
+      const height = 6 + random() * 6
+      out.push({ position: [x, height / 2 - 0.2, z], rotation: Math.atan2(-x, 0) + (random() - 0.5) * 0.6, height, seed: 1 + Math.floor(random() * 3) })
+    }
+    for (let i = 0; i < 6; i++) {
+      const height = 7 + random() * 5
+      out.push({ position: [-12 + random() * 24, height / 2 - 0.2, LENGTH + 4 + random() * 10], rotation: Math.PI, height, seed: 1 + Math.floor(random() * 3) })
+    }
+    for (let i = 0; i < 5; i++) {
+      const height = 7 + random() * 5
+      const side = i % 2 ? 1 : -1
+      out.push({ position: [side * (4 + random() * 10), height / 2 - 0.2, -10 - random() * 10], rotation: 0, height, seed: 1 + Math.floor(random() * 3) })
+    }
+    return out
+  }, [])
+  // three silhouettes, shared by all the cards
+  const materials = useMemo(
+    () =>
+      [1, 2, 3].map(
+        (seed) =>
+          new THREE.MeshBasicMaterial({
+            color: '#8f8a6e',
+            alphaMap: treeTex(seed * 17),
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          }),
+      ),
+    [],
+  )
+  const scratchTint = useMemo(() => new THREE.Color(), [])
+
+  // --- Frame ---
+  useFrame(() => {
+    scratchTint.copy(day.fog).lerp(TREE_SHADE, 0.42 * (1 - day.night))
+    for (const material of materials) material.color.copy(scratchTint)
+  })
+
+  // --- Render ---
+  return (
+    <group>
+      {cards.map((card, index) => (
+        <mesh key={index} position={card.position} rotation-y={card.rotation} material={materials[card.seed - 1]} renderOrder={-5}>
+          <planeGeometry args={[card.height * 0.8, card.height]} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+// ===== Component: Shafts =====
+
+/** Sun beams falling from the roof glass, as additive quads. */
+export const Shafts = ({ mobile }: { mobile: boolean }) => {
+  // --- Refs & state ---
+  const geometry = useMemo(() => {
+    const random = rng(55)
     const starts: number[] = []
     const corners: number[] = []
     const seeds: number[] = []
     const count = mobile ? 7 : 14
     for (let i = 0; i < count; i++) {
-      const s = i % 2 ? 1 : -1
-      const t = 0.2 + r() * 0.6
-      const z = 1 + r() * (LENGTH - 3)
-      const start = [s * HALF * (1 - t), EAVE + (RIDGE - EAVE) * t, z]
-      const seed = r()
-      const quad = [
+      const side = i % 2 ? 1 : -1
+      const up = 0.2 + random() * 0.6 // how far up the roof slope the beam starts (0 eave, 1 ridge)
+      const z = 1 + random() * (LENGTH - 3)
+      const start = [side * HALF * (1 - up), EAVE + (RIDGE - EAVE) * up, z]
+      const seed = random()
+      const quadCorners = [
         [0, 0],
         [1, 0],
         [1, 1],
@@ -170,24 +255,24 @@ export function Shafts({ mobile }: { mobile: boolean }) {
         [1, 1],
         [0, 1],
       ]
-      for (const [cx, cy] of quad) {
+      for (const [cx, cy] of quadCorners) {
         starts.push(...start)
         corners.push(cx, cy)
         seeds.push(seed)
       }
     }
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(starts.length), 3))
-    g.setAttribute('aStart', new THREE.Float32BufferAttribute(starts, 3))
-    g.setAttribute('aCorner', new THREE.Float32BufferAttribute(corners, 2))
-    g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1))
-    return g
+    const out = new THREE.BufferGeometry()
+    out.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(starts.length), 3))
+    out.setAttribute('aStart', new THREE.Float32BufferAttribute(starts, 3))
+    out.setAttribute('aCorner', new THREE.Float32BufferAttribute(corners, 2))
+    out.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1))
+    return out
   }, [mobile])
-  const mat = useMemo(
+  const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        vertexShader: shaftVertex,
-        fragmentShader: shaftFragment,
+        vertexShader: shaftVertexShader,
+        fragmentShader: shaftFragmentShader,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
@@ -202,69 +287,61 @@ export function Shafts({ mobile }: { mobile: boolean }) {
       }),
     [],
   )
+
+  // --- Frame ---
   useFrame(({ clock }) => {
-    mat.uniforms.uSun.value.copy(day.sunDir)
-    mat.uniforms.uColor.value.copy(day.sunColor)
-    mat.uniforms.uI.value = day.shafts * 0.045 * Math.min(1, day.sunI / 2.5)
-    mat.uniforms.uTime.value = live.reduce ? 0 : clock.elapsedTime
+    material.uniforms.uSun.value.copy(day.sunDir)
+    material.uniforms.uColor.value.copy(day.sunColor)
+    material.uniforms.uI.value = day.shafts * 0.045 * Math.min(1, day.sunI / 2.5)
+    material.uniforms.uTime.value = live.reduce ? 0 : clock.elapsedTime
   })
-  return <mesh geometry={geo} material={mat} frustumCulled={false} renderOrder={5} />
+
+  // --- Render ---
+  return <mesh geometry={geometry} material={material} frustumCulled={false} renderOrder={5} />
 }
 
-/* ---------------------------------------------------------------- dust */
+// ===== Component: Dust =====
 
-export function Dust({ mobile }: { mobile: boolean }) {
+/** Motes drifting through the room, lit by the sun by day and by the lantern at night. */
+export const Dust = ({ mobile }: { mobile: boolean }) => {
+  // --- Refs & state ---
   const count = mobile ? 500 : 1300
-  const geo = useMemo(() => {
-    const r = rng(9)
-    const pos = new Float32Array(count * 3)
-    const seed = new Float32Array(count)
+  const geometry = useMemo(() => {
+    const random = rng(9)
+    const positions = new Float32Array(count * 3)
+    const seeds = new Float32Array(count)
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (r() - 0.5) * 2 * (HALF - 0.4)
-      pos[i * 3 + 1] = 0.2 + r() * (EAVE + 0.6)
-      pos[i * 3 + 2] = -0.5 + r() * (LENGTH + 0.5)
-      seed[i] = r()
+      positions[i * 3] = (random() - 0.5) * 2 * (HALF - 0.4)
+      positions[i * 3 + 1] = 0.2 + random() * (EAVE + 0.6)
+      positions[i * 3 + 2] = -0.5 + random() * (LENGTH + 0.5)
+      seeds[i] = random()
     }
-    const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1))
-    return g
+    const out = new THREE.BufferGeometry()
+    out.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    out.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1))
+    return out
   }, [count])
-  const mat = useMemo(
+  const material = useMemo(
     () =>
       new THREE.ShaderMaterial({
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         uniforms: { uTime: { value: 0 }, uI: { value: 1 }, uColor: { value: new THREE.Color('#fff1d6') }, uPx: { value: 1 } },
-        vertexShader: `attribute float aSeed; uniform float uTime; uniform float uPx; varying float vA;
-          void main(){
-            vec3 p = position;
-            float t = uTime * (0.03 + aSeed * 0.04);
-            p.x += sin(t * 6.0 + aSeed * 40.0) * 0.25;
-            p.y += mod(t + aSeed * 3.0, 3.4) - 1.7;
-            p.z += cos(t * 4.0 + aSeed * 20.0) * 0.25;
-            vec4 mv = viewMatrix * vec4(p, 1.0);
-            gl_Position = projectionMatrix * mv;
-            float d = -mv.z;
-            gl_PointSize = uPx * (1.2 + aSeed * 2.6) * (6.0 / max(d, 0.5));
-            vA = smoothstep(0.3, 1.5, d) * (1.0 - smoothstep(9.0, 16.0, d)) * (0.35 + aSeed * 0.65);
-          }`,
-        fragmentShader: `uniform vec3 uColor; uniform float uI; varying float vA;
-          void main(){
-            float r = length(gl_PointCoord - 0.5);
-            float a = smoothstep(0.5, 0.0, r);
-            gl_FragColor = vec4(uColor * a * vA * uI, 1.0);
-          }`,
+        vertexShader: dustVertexShader,
+        fragmentShader: dustFragmentShader,
       }),
     [],
   )
-  useFrame(({ clock, gl }) => {
-    mat.uniforms.uTime.value = live.reduce ? 0 : clock.elapsedTime
-    mat.uniforms.uI.value = day.dust * 0.55
-    mat.uniforms.uPx.value = gl.getPixelRatio()
-    mat.uniforms.uColor.value.copy(day.sunColor).lerp(new THREE.Color('#ffc98e'), day.night)
-  })
-  return <points geometry={geo} material={mat} frustumCulled={false} renderOrder={6} />
-}
 
+  // --- Frame ---
+  useFrame(({ clock, gl }) => {
+    material.uniforms.uTime.value = live.reduce ? 0 : clock.elapsedTime
+    material.uniforms.uI.value = day.dust * 0.55
+    material.uniforms.uPx.value = gl.getPixelRatio()
+    material.uniforms.uColor.value.copy(day.sunColor).lerp(DUST_NIGHT, day.night)
+  })
+
+  // --- Render ---
+  return <points geometry={geometry} material={material} frustumCulled={false} renderOrder={6} />
+}

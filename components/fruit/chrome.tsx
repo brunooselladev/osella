@@ -1,29 +1,21 @@
 'use client'
 
-import type { RefObject } from 'react'
+// The DOM over the canvas: header, THE BENCH index (the skip-list), the lenses, the hero title,
+// the floating specimen tag and the progress HUD. All copy comes from content/.
+
+// ===== External modules =====
+import { Fragment, type RefObject } from 'react'
 import Link from 'next/link'
+
+// ===== Internal modules =====
 import { fruitCopy } from '@/content/fruit'
 import type { Lang, Lens } from '@/content/types'
 import { HUD_TICKS } from './camera-path'
 import type { BenchCase } from './types'
 
-const lenses: Lens[] = ['business', 'engineering', 'delivery']
+// ===== Types =====
 
-export function FruitChrome({
-  lang,
-  setLang,
-  cases,
-  selectedId,
-  visited,
-  lens,
-  sheetOpen,
-  headline,
-  support,
-  hudRef,
-  onSelect,
-  onHighlight,
-  onLens,
-}: {
+type FruitChromeProps = {
   lang: Lang
   setLang: (lang: Lang) => void
   cases: BenchCase[]
@@ -33,14 +25,31 @@ export function FruitChrome({
   sheetOpen: boolean
   headline: string
   support: string
+  /** The HUD readout; BenchApp writes its text directly on scroll. */
   hudRef: RefObject<HTMLSpanElement | null>
+  /** Index click: walk to the station, then open the sheet. */
   onSelect: (id: string) => void
+  /** Index hover or focus: light the specimen up without walking. */
   onHighlight: (id: string) => void
   onLens: (lens: Lens) => void
-}) {
+}
+
+// ===== Constants =====
+
+const LENSES: Lens[] = ['business', 'engineering', 'delivery']
+
+// ===== Helpers =====
+
+const twoDigits = (index: number) => String(index + 1).padStart(2, '0')
+
+// ===== Component: FruitChrome =====
+
+export const FruitChrome = ({ lang, setLang, cases, selectedId, visited, lens, sheetOpen, headline, support, hudRef, onSelect, onHighlight, onLens }: FruitChromeProps) => {
+  // --- Derived ---
   const ui = fruitCopy(lang)
   const selected = cases.find((item) => item.id === selectedId)
 
+  // --- Render ---
   return (
     <>
       <header className="fruit-header">
@@ -56,7 +65,7 @@ export function FruitChrome({
             <button type="button" aria-pressed={lang === 'en'} onClick={() => setLang('en')}>
               EN
             </button>
-            <span style={{ color: 'var(--fg-2)' }}>/</span>
+            <span className="fruit-sep">/</span>
             <button type="button" aria-pressed={lang === 'es'} onClick={() => setLang('es')}>
               ES
             </button>
@@ -92,7 +101,7 @@ export function FruitChrome({
                   onPointerEnter={() => onHighlight(item.id)}
                 >
                   <span className="tick" />
-                  <span className="num">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="num">{twoDigits(index)}</span>
                   <span className="name">{item[lang].cardTitle}</span>
                   {seen ? <span className="dot" aria-label={ui.visited} /> : null}
                 </button>
@@ -103,13 +112,13 @@ export function FruitChrome({
       </nav>
 
       <div className="fruit-lenses" role="group" aria-label={ui.lensAria} data-bench-lenses>
-        {lenses.map((item, index) => (
-          <span key={item} style={{ display: 'contents' }}>
-            {index > 0 ? <span style={{ color: 'var(--fg-2)' }}>·</span> : null}
+        {LENSES.map((item, index) => (
+          <Fragment key={item}>
+            {index > 0 ? <span className="fruit-sep">·</span> : null}
             <button type="button" aria-pressed={lens === item} onClick={() => onLens(item)}>
               {ui.lens[item]}
             </button>
-          </span>
+          </Fragment>
         ))}
       </div>
 
@@ -121,7 +130,7 @@ export function FruitChrome({
 
       {selected && !sheetOpen ? (
         <div className="fruit-tag">
-          <small>{String(cases.findIndex((item) => item.id === selected.id) + 1).padStart(2, '0')}</small>
+          <small>{twoDigits(cases.findIndex((item) => item.id === selected.id))}</small>
           <span>{selected[lang].cardTitle}</span>
         </div>
       ) : null}

@@ -1,25 +1,46 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+// Turns the page scroll into the walk's progress. Lenis smooths the wheel, GSAP's ticker drives
+// Lenis, and a ScrollTrigger pinned to the tall .fruit-pin element reports progress 0..1.
+// Also offers `scrollToProgress` for the skip-list and the deep links.
+
+// ===== External modules =====
+import { useCallback, useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
+
+// ===== Internal modules =====
 import { live } from './bench-live'
 
+// ===== Types =====
+
 type Options = {
-  onProgress: (progress: number, velocity: number) => void
+  onProgress: (progress: number) => void
+  /** A scroll the visitor made, not one we asked for. */
   onUserScroll?: () => void
 }
 
-export function useBenchScroll({ onProgress, onUserScroll }: Options) {
+// ===== Constants =====
+
+/** Default duration of a programmatic walk to a station (s). */
+const WALK_DURATION = 1.2
+
+// ===== Hook: useBenchScroll =====
+
+export const useBenchScroll = ({ onProgress, onUserScroll }: Options) => {
+  // --- Refs & state ---
   const pinRef = useRef<HTMLDivElement>(null)
   const lenisRef = useRef<Lenis | null>(null)
+  /** True while a scrollTo we started is in flight. */
   const programmatic = useRef(false)
+  // latest callbacks, so the effect below never has to re-subscribe
   const onProgressRef = useRef(onProgress)
   const onUserScrollRef = useRef(onUserScroll)
   onProgressRef.current = onProgress
   onUserScrollRef.current = onUserScroll
 
+  // --- Effects ---
   useEffect(() => {
     const pin = pinRef.current
     if (!pin) return
@@ -52,7 +73,7 @@ export function useBenchScroll({ onProgress, onUserScroll }: Options) {
       onUpdate: (self) => {
         live.progress = self.progress
         live.velocity = lenis.velocity
-        onProgressRef.current(self.progress, lenis.velocity)
+        onProgressRef.current(self.progress)
       },
     })
 
@@ -77,7 +98,9 @@ export function useBenchScroll({ onProgress, onUserScroll }: Options) {
     }
   }, [])
 
-  const scrollToProgress = (progress: number, duration = 1.2) => {
+  // --- Methods ---
+  /** Walks to `progress` over `duration` seconds (0 = jump). */
+  const scrollToProgress = useCallback((progress: number, duration = WALK_DURATION) => {
     const pin = pinRef.current
     const lenis = lenisRef.current
     if (!pin) return
@@ -99,7 +122,7 @@ export function useBenchScroll({ onProgress, onUserScroll }: Options) {
       return
     }
     lenis.scrollTo(top, { duration, onComplete: done })
-  }
+  }, [])
 
   return { pinRef, scrollToProgress }
 }

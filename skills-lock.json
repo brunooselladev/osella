@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "skills": {
+    "threejs-animation": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "adfc1226b3123e7f7f8eb18e0619fc06bc7685ecc5061263a9a4d5bb9810e361"
+    },
+    "threejs-audio": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "88b09bb81410837d977c57982ae3ab47b956d0ab33ed4fca40d8d9ebf7535916"
+    },
+    "threejs-camera": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "7b9b9625325f133e975f9b5f7b85560fa908371ab5d3dfbb5d16c2a305cd46bf"
+    },
+    "threejs-core": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "bce444539dc72e54543566867653ac09e3b2153f1aff100d0f13dc81dd8a431c"
+    },
+    "threejs-geometry": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "b85e2646ec8a5f6898a1ebfba66996a34901ad7d15463f07082b419d8fde3cc9"
+    },
+    "threejs-lighting": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "f12f76864699517cfcdd2528481266536265f18111e5dc644625dfeb6cabd950"
+    },
+    "threejs-loaders": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "7a22d691157cbef00375c1e2dcf1fbe9a294d08ca3c102114e8a9e89b08ea296"
+    },
+    "threejs-materials": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "d89d69a69c42f18c95b6ab303b702a09fbcc0e9737fa6830ea9559e9b4fd79e0"
+    },
+    "threejs-performance": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "2fb613d99dc0714f3a8a2a228fc17ef6642d7e82bcf2c6ec3c5c90b95c1f1d6e"
+    },
+    "threejs-physics": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "1672e2bfed1766f09c3940d1dea57f66dc967a5d1adbf2197287d83b1caf6bef"
+    },
+    "threejs-postprocessing": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "4e00a45d066f635d43781b25353997fa48c28f37fd447f1536b6ef6e79121193"
+    },
+    "threejs-react": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "4bbea82d71c4b70f39be6cb307636064ff9505aeba037169651394f54b5b5fd8"
+    },
+    "threejs-shaders": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "4fb2deedb7e5112624db322aea24edd3dc8525ee9794a7c2c6ab912fc2c1ae4e"
+    },
+    "threejs-xr": {
+      "source": "alton47/threejs-skills",
+      "sourceType": "github",
+      "computedHash": "d333ad3080d06f2446d514be41a0928d0765ac8a8542773250844f67087b75be"
+    }
+  }
+}

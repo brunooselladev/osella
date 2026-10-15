@@ -1,62 +1,81 @@
-import * as THREE from 'three'
-import { BAKED } from './baked'
-
 // Procedural canvas textures, deterministic. In production they are served pre-baked as WebP
-// (public/fruit/tex, made by `?bake=1`) and decoded off the main thread; the generators stay
-// as the fallback and as the source of truth.
+// (public/fruit/tex, made by `?bake=1` + scripts/bake-fruit-textures.mjs) and decoded off the main
+// thread; the generators stay as the fallback and as the source of truth. Every generator goes
+// through `cachedTexture`, so a texture is made (or fetched) once however many pieces use it.
 
-const cache = new Map<string, THREE.Texture>()
-const pending: Promise<void>[] = []
-const baking = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bake')
+// ===== External modules =====
+import * as THREE from 'three'
 
-/** Resolves once every texture requested so far has its pixels. */
-export function texturesReady() {
-  return Promise.all(pending).then(() => undefined)
+// ===== Internal modules =====
+import { BAKED } from './baked'
+import { hasFlag } from './lookdev'
+
+// ===== Types =====
+
+type TextureOptions = {
+  /** Colour data (sRGB) rather than linear data such as bump maps. */
+  color?: boolean
+  /** Tile in both directions. */
+  repeat?: boolean
 }
 
-type Opts = { color?: boolean; repeat?: boolean }
+// ===== Constants =====
 
-export function rng(seed: number) {
-  let s = seed >>> 0 || 1
+const cache = new Map<string, THREE.Texture>()
+/** One promise per baked texture still loading; `texturesReady` waits for all of them. */
+const pending: Promise<void>[] = []
+/** `?bake=1`: generate everything on canvas and expose it for the bake script. */
+const baking = hasFlag('bake')
+
+// ===== Helpers: plumbing =====
+
+/** Resolves once every texture requested so far has its pixels. */
+export const texturesReady = () => Promise.all(pending).then(() => undefined)
+
+/** A seeded xorshift RNG, 0..1. Same seed, same sequence, so every bake is identical. */
+export const rng = (seed: number) => {
+  let state = seed >>> 0 || 1
   return () => {
-    s ^= s << 13
-    s ^= s >>> 17
-    s ^= s << 5
-    return ((s >>> 0) % 100000) / 100000
+    state ^= state << 13
+    state ^= state >>> 17
+    state ^= state << 5
+    return ((state >>> 0) % 100000) / 100000
   }
 }
 
-function canvas(size: number, h = size) {
-  const c = document.createElement('canvas')
-  c.width = size
-  c.height = h
-  const ctx = c.getContext('2d')!
-  return { c, ctx }
+const makeCanvas = (width: number, height = width) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')!
+  return { canvas, ctx }
 }
 
-function finish(c: HTMLCanvasElement, color = true, repeat = true) {
-  const tex = new THREE.CanvasTexture(c)
-  tex.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
-  if (repeat) tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.anisotropy = 16
-  tex.needsUpdate = true
-  return tex
+/** Wraps a painted canvas as a three texture with the right colour space and wrapping. */
+const toTexture = (canvas: HTMLCanvasElement, color = true, repeat = true) => {
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
+  if (repeat) texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  texture.anisotropy = 16
+  texture.needsUpdate = true
+  return texture
 }
 
-function loadBaked(key: string, make: () => THREE.Texture, { color = true, repeat = true }: Opts) {
-  const tex = new THREE.Texture()
-  tex.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
-  if (repeat) tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.anisotropy = 16
-  tex.flipY = false
-  tex.premultiplyAlpha = false
+/** An empty texture that fills itself from the baked WebP, or from the generator if that fails. */
+const loadBaked = (key: string, make: () => THREE.Texture, { color = true, repeat = true }: TextureOptions) => {
+  const texture = new THREE.Texture()
+  texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace
+  if (repeat) texture.wrapS = texture.wrapT = THREE.RepeatWrapping
+  texture.anisotropy = 16
+  texture.flipY = false
+  texture.premultiplyAlpha = false
   pending.push(
     new Promise<void>((resolve) => {
       const fallback = () => {
         const made = make()
-        tex.image = made.image
-        tex.flipY = true
-        tex.needsUpdate = true
+        texture.image = made.image
+        texture.flipY = true
+        texture.needsUpdate = true
         resolve()
       }
       new THREE.ImageBitmapLoader()
@@ -64,8 +83,8 @@ function loadBaked(key: string, make: () => THREE.Texture, { color = true, repea
         .load(
           `/fruit/tex/${key}.webp`,
           (bitmap) => {
-            tex.image = bitmap
-            tex.needsUpdate = true
+            texture.image = bitmap
+            texture.needsUpdate = true
             resolve()
           },
           undefined,
@@ -73,30 +92,36 @@ function loadBaked(key: string, make: () => THREE.Texture, { color = true, repea
         )
     }),
   )
-  return tex
+  return texture
 }
 
-function once(key: string, make: () => THREE.Texture, opts: Opts = {}) {
+/**
+ * The texture for `key`: from the cache, else from the baked WebP when one exists, else generated
+ * now. While baking, generators always run and their output is collected on `window.__bake`.
+ */
+const cachedTexture = (key: string, make: () => THREE.Texture, options: TextureOptions = {}) => {
   const hit = cache.get(key)
   if (hit) return hit
   if (!baking && BAKED.includes(key)) {
-    const baked = loadBaked(key, make, opts)
+    const baked = loadBaked(key, make, options)
     cache.set(key, baked)
     return baked
   }
-  const t0 = performance.now()
-  const tex = make()
-  const w = window as Window & { __benchPerf?: Record<string, number>; __bake?: Record<string, string> }
-  if (w.__benchPerf) w.__benchPerf[`tex:${key}`] = performance.now() - t0
-  if (baking) (w.__bake ??= {})[key] = (tex.image as HTMLCanvasElement).toDataURL('image/webp', 0.9)
-  cache.set(key, tex)
-  return tex
+  const started = performance.now()
+  const texture = make()
+  const perfWindow = window as Window & { __benchPerf?: Record<string, number>; __bake?: Record<string, string> }
+  if (perfWindow.__benchPerf) perfWindow.__benchPerf[`tex:${key}`] = performance.now() - started
+  if (baking) (perfWindow.__bake ??= {})[key] = (texture.image as HTMLCanvasElement).toDataURL('image/webp', 0.9)
+  cache.set(key, texture)
+  return texture
 }
 
-// Tileable value noise on a grid of `cells`.
-function valueNoise(size: number, cells: number, seed: number) {
-  const r = rng(seed)
-  const grid = Array.from({ length: cells * cells }, () => r())
+// ===== Helpers: noise painting =====
+
+/** Tileable value noise on a grid of `cells`, as a size × size float array. */
+const valueNoise = (size: number, cells: number, seed: number) => {
+  const random = rng(seed)
+  const grid = Array.from({ length: cells * cells }, () => random())
   const out = new Float32Array(size * size)
   for (let y = 0; y < size; y++) {
     const gy = (y / size) * cells
@@ -118,100 +143,107 @@ function valueNoise(size: number, cells: number, seed: number) {
   return out
 }
 
-function fbm(size: number, seed: number, octaves = 4, base = 4) {
+/** Fractal noise: `octaves` layers of value noise, each twice as fine and half as strong. */
+const fbm = (size: number, seed: number, octaves = 4, base = 4) => {
   const out = new Float32Array(size * size)
-  let amp = 0.5
+  let amplitude = 0.5
   let total = 0
-  for (let o = 0; o < octaves; o++) {
-    const n = valueNoise(size, base << o, seed + o * 31)
-    for (let i = 0; i < out.length; i++) out[i] += n[i] * amp
-    total += amp
-    amp *= 0.5
+  for (let octave = 0; octave < octaves; octave++) {
+    const layer = valueNoise(size, base << octave, seed + octave * 31)
+    for (let i = 0; i < out.length; i++) out[i] += layer[i] * amplitude
+    total += amplitude
+    amplitude *= 0.5
   }
   for (let i = 0; i < out.length; i++) out[i] /= total
   return out
 }
 
-function paintNoise(ctx: CanvasRenderingContext2D, size: number, n: Float32Array, fn: (v: number, i: number) => [number, number, number, number?]) {
-  const img = ctx.getImageData(0, 0, size, size)
-  for (let i = 0; i < n.length; i++) {
-    const [r, g, b, a] = fn(n[i], i)
-    img.data[i * 4] = r
-    img.data[i * 4 + 1] = g
-    img.data[i * 4 + 2] = b
-    img.data[i * 4 + 3] = a ?? 255
+/** Paints every pixel from a noise value through `toRgba`. */
+const paintNoise = (ctx: CanvasRenderingContext2D, size: number, noise: Float32Array, toRgba: (value: number, index: number) => [number, number, number, number?]) => {
+  const image = ctx.getImageData(0, 0, size, size)
+  for (let i = 0; i < noise.length; i++) {
+    const [r, g, b, a] = toRgba(noise[i], i)
+    image.data[i * 4] = r
+    image.data[i * 4 + 1] = g
+    image.data[i * 4 + 2] = b
+    image.data[i * 4 + 3] = a ?? 255
   }
-  ctx.putImageData(img, 0, 0)
+  ctx.putImageData(image, 0, 0)
 }
 
-function overlayGrain(ctx: CanvasRenderingContext2D, size: number, seed: number, strength: number) {
-  const n = fbm(size, seed, 3, 32)
-  const img = ctx.getImageData(0, 0, size, size)
-  for (let i = 0; i < n.length; i++) {
-    const k = 1 + (n[i] - 0.5) * strength
-    img.data[i * 4] = Math.min(255, img.data[i * 4] * k)
-    img.data[i * 4 + 1] = Math.min(255, img.data[i * 4 + 1] * k)
-    img.data[i * 4 + 2] = Math.min(255, img.data[i * 4 + 2] * k)
+/** Multiplies the canvas by fine noise so flat colours get some tooth. */
+const overlayGrain = (ctx: CanvasRenderingContext2D, size: number, seed: number, strength: number) => {
+  const noise = fbm(size, seed, 3, 32)
+  const image = ctx.getImageData(0, 0, size, size)
+  for (let i = 0; i < noise.length; i++) {
+    const k = 1 + (noise[i] - 0.5) * strength
+    image.data[i * 4] = Math.min(255, image.data[i * 4] * k)
+    image.data[i * 4 + 1] = Math.min(255, image.data[i * 4 + 1] * k)
+    image.data[i * 4 + 2] = Math.min(255, image.data[i * 4 + 2] * k)
   }
-  ctx.putImageData(img, 0, 0)
+  ctx.putImageData(image, 0, 0)
 }
 
 const hsl = (h: number, s: number, l: number) => `hsl(${h} ${s}% ${l}%)`
 
-/** Running-bond brick, 1 m × 1 m per tile. */
-export function brickTex(limewash = 0) {
-  return once(`brick${limewash}`, () => {
+// ===== Generators =====
+
+/** Running-bond brick, 1 m × 1 m per tile. `limewash` 1 paints it over in pale lime. */
+export const brickTex = (limewash = 0) =>
+  cachedTexture(`brick${limewash}`, () => {
     const size = 1024
-    const { c, ctx } = canvas(size)
-    const r = rng(11 + limewash * 7)
-    const px = size / 1.0
-    const bw = 0.215 * px
-    const bh = 0.065 * px
-    const m = 0.011 * px
+    const { canvas, ctx } = makeCanvas(size)
+    const random = rng(11 + limewash * 7)
+    const px = size / 1.0 // pixels per metre
+    const brickW = 0.215 * px
+    const brickH = 0.065 * px
+    const mortar = 0.011 * px
     ctx.fillStyle = limewash ? '#e9e0cf' : '#cdbfa6'
     ctx.fillRect(0, 0, size, size)
-    const rows = Math.round(size / (bh + m))
+    const rows = Math.round(size / (brickH + mortar))
     const rowH = size / rows
-    const cols = Math.round(size / (bw + m))
+    const cols = Math.round(size / (brickW + mortar))
     const colW = size / cols
     for (let row = 0; row < rows; row++) {
-      const off = row % 2 ? colW / 2 : 0
+      const offset = row % 2 ? colW / 2 : 0
       for (let col = -1; col < cols + 1; col++) {
-        const x = col * colW + off + m / 2
-        const y = row * rowH + m / 2
-        const h = 12 + r() * 14
-        const s = 32 + r() * 22
-        const l = 36 + r() * 14 - (r() < 0.08 ? 10 : 0)
-        ctx.fillStyle = limewash ? hsl(h + 18, 22 + r() * 14, 78 + r() * 10) : hsl(h, s, l)
-        ctx.fillRect(x, y, colW - m, rowH - m)
-        if (!limewash && r() < 0.35) {
-          ctx.fillStyle = `rgba(250,240,220,${0.06 + r() * 0.12})`
-          ctx.fillRect(x, y + (rowH - m) * r() * 0.5, colW - m, (rowH - m) * 0.5)
+        const x = col * colW + offset + mortar / 2
+        const y = row * rowH + mortar / 2
+        const hue = 12 + random() * 14
+        const saturation = 32 + random() * 22
+        const lightness = 36 + random() * 14 - (random() < 0.08 ? 10 : 0)
+        ctx.fillStyle = limewash ? hsl(hue + 18, 22 + random() * 14, 78 + random() * 10) : hsl(hue, saturation, lightness)
+        ctx.fillRect(x, y, colW - mortar, rowH - mortar)
+        if (!limewash && random() < 0.35) {
+          // a paler band on some bricks
+          ctx.fillStyle = `rgba(250,240,220,${0.06 + random() * 0.12})`
+          ctx.fillRect(x, y + (rowH - mortar) * random() * 0.5, colW - mortar, (rowH - mortar) * 0.5)
         }
       }
     }
     overlayGrain(ctx, size, 5 + limewash, limewash ? 0.25 : 0.45)
-    return finish(c)
+    return toTexture(canvas)
   })
-}
 
 /** Herringbone brick floor, 0.8 m per tile. */
-export function herringboneTex() {
-  return once('herring', () => {
+export const herringboneTex = () =>
+  cachedTexture('herring', () => {
     const size = 1024
-    const { c, ctx } = canvas(size)
-    const r = rng(23)
-    const u = size / 8
-    const g = u * 0.07
+    const { canvas, ctx } = makeCanvas(size)
+    const random = rng(23)
+    const unit = size / 8
+    const gap = unit * 0.07
     ctx.fillStyle = '#9a8a78'
     ctx.fillRect(0, 0, size, size)
     const brick = (x: number, y: number, w: number, h: number) => {
-      const l = 58 + r() * 12
-      ctx.fillStyle = hsl(20 + r() * 14, 16 + r() * 14, l)
-      ctx.fillRect(x * u + g, y * u + g, w * u - 2 * g, h * u - 2 * g)
-      ctx.fillStyle = `rgba(255,236,210,${r() * 0.12})`
-      ctx.fillRect(x * u + g, y * u + g, w * u - 2 * g, (h * u - 2 * g) * 0.4)
+      const lightness = 58 + random() * 12
+      ctx.fillStyle = hsl(20 + random() * 14, 16 + random() * 14, lightness)
+      ctx.fillRect(x * unit + gap, y * unit + gap, w * unit - 2 * gap, h * unit - 2 * gap)
+      ctx.fillStyle = `rgba(255,236,210,${random() * 0.12})`
+      ctx.fillRect(x * unit + gap, y * unit + gap, w * unit - 2 * gap, (h * unit - 2 * gap) * 0.4)
     }
+    // Each cell of the pattern is one horizontal and one vertical brick; the lattice is laid on
+    // the diagonal and repeated so the tile edges wrap.
     for (let i = -12; i < 20; i++) {
       for (let j = -8; j < 8; j++) {
         const ox = i + 2 * j
@@ -230,246 +262,258 @@ export function herringboneTex() {
       }
     }
     overlayGrain(ctx, size, 9, 0.4)
-    return finish(c)
+    return toTexture(canvas)
   })
-}
 
 /** Wood grain running along V (tile = 0.6 m). */
-export function woodTex(tone: 'bench' | 'door' | 'crate' = 'bench') {
-  return once(`wood-${tone}`, () => {
+export const woodTex = (tone: 'bench' | 'door' | 'crate' = 'bench') =>
+  cachedTexture(`wood-${tone}`, () => {
     const size = 512
-    const { c, ctx } = canvas(size)
-    const n = fbm(size, tone === 'door' ? 3 : 17, 4, 4)
+    const { canvas, ctx } = makeCanvas(size)
+    const noise = fbm(size, tone === 'door' ? 3 : 17, 4, 4)
     const base = tone === 'door' ? [92, 58, 38] : tone === 'crate' ? [192, 164, 126] : [178, 146, 112]
-    paintNoise(ctx, size, n, (v, i) => {
-      const x = i % size
-      const y = Math.floor(i / size)
-      const ring = Math.sin((x / size) * 70 + v * 18 + Math.sin(y / 60) * 0.6)
-      const k = 0.82 + v * 0.3 + ring * 0.07
+    paintNoise(ctx, size, noise, (value, index) => {
+      const x = index % size
+      const y = Math.floor(index / size)
+      const ring = Math.sin((x / size) * 70 + value * 18 + Math.sin(y / 60) * 0.6)
+      const k = 0.82 + value * 0.3 + ring * 0.07
       return [base[0] * k, base[1] * k, base[2] * k]
     })
-    const r = rng(41)
+    // long fibres
+    const random = rng(41)
     ctx.globalAlpha = 0.18
     for (let i = 0; i < 70; i++) {
-      ctx.strokeStyle = r() < 0.5 ? '#3d2715' : '#e8cfa6'
-      ctx.lineWidth = 0.6 + r() * 1.2
-      const x = r() * size
+      ctx.strokeStyle = random() < 0.5 ? '#3d2715' : '#e8cfa6'
+      ctx.lineWidth = 0.6 + random() * 1.2
+      const x = random() * size
       ctx.beginPath()
       ctx.moveTo(x, 0)
-      ctx.bezierCurveTo(x + (r() - 0.5) * 14, size * 0.33, x + (r() - 0.5) * 14, size * 0.66, x, size)
+      ctx.bezierCurveTo(x + (random() - 0.5) * 14, size * 0.33, x + (random() - 0.5) * 14, size * 0.66, x, size)
       ctx.stroke()
     }
     ctx.globalAlpha = 1
     if (tone === 'bench') {
       // watering stains
       for (let i = 0; i < 9; i++) {
-        const gx = r() * size
-        const gy = r() * size
-        const rad = 20 + r() * 60
-        const grd = ctx.createRadialGradient(gx, gy, rad * 0.2, gx, gy, rad)
-        grd.addColorStop(0, 'rgba(60,36,20,0.18)')
-        grd.addColorStop(0.85, 'rgba(60,36,20,0.1)')
-        grd.addColorStop(1, 'rgba(60,36,20,0)')
-        ctx.fillStyle = grd
-        ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2)
+        const cx = random() * size
+        const cy = random() * size
+        const radius = 20 + random() * 60
+        const gradient = ctx.createRadialGradient(cx, cy, radius * 0.2, cx, cy, radius)
+        gradient.addColorStop(0, 'rgba(60,36,20,0.18)')
+        gradient.addColorStop(0.85, 'rgba(60,36,20,0.1)')
+        gradient.addColorStop(1, 'rgba(60,36,20,0)')
+        ctx.fillStyle = gradient
+        ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2)
       }
     }
-    return finish(c)
+    return toTexture(canvas)
   })
-}
 
 /** Damp potting soil with perlite flecks. */
-export function soilTex() {
-  return once('soil', () => {
+export const soilTex = () =>
+  cachedTexture('soil', () => {
     const size = 512
-    const { c, ctx } = canvas(size)
-    const n = fbm(size, 61, 5, 8)
-    paintNoise(ctx, size, n, (v) => {
-      const k = 0.55 + v * 0.75
+    const { canvas, ctx } = makeCanvas(size)
+    const noise = fbm(size, 61, 5, 8)
+    paintNoise(ctx, size, noise, (value) => {
+      const k = 0.55 + value * 0.75
       return [62 * k, 42 * k, 28 * k]
     })
-    const r = rng(77)
+    const random = rng(77)
     for (let i = 0; i < 900; i++) {
-      const p = r()
-      ctx.fillStyle = p < 0.12 ? 'rgba(236,228,214,0.85)' : p < 0.5 ? 'rgba(30,18,10,0.6)' : 'rgba(120,88,58,0.5)'
-      const s = 1 + r() * 3
-      ctx.fillRect(r() * size, r() * size, s, s)
+      const pick = random()
+      ctx.fillStyle = pick < 0.12 ? 'rgba(236,228,214,0.85)' : pick < 0.5 ? 'rgba(30,18,10,0.6)' : 'rgba(120,88,58,0.5)'
+      const fleck = 1 + random() * 3
+      ctx.fillRect(random() * size, random() * size, fleck, fleck)
     }
-    return finish(c)
+    return toTexture(canvas)
   })
-}
 
-/** Moss / algae patches, greyscale alpha. */
-export function mossTex() {
-  return once('moss', () => {
+/** Moss / algae patches with alpha. */
+export const mossTex = () =>
+  cachedTexture('moss', () => {
     const size = 256
-    const { c, ctx } = canvas(size)
-    const n = fbm(size, 91, 5, 4)
-    paintNoise(ctx, size, n, (v) => {
-      const a = THREE.MathUtils.smoothstep(v, 0.6, 0.78) * 0.85
-      const k = 0.5 + v * 0.45
-      return [70 * k, 80 * k, 40 * k, a * 255]
+    const { canvas, ctx } = makeCanvas(size)
+    const noise = fbm(size, 91, 5, 4)
+    paintNoise(ctx, size, noise, (value) => {
+      const alpha = THREE.MathUtils.smoothstep(value, 0.6, 0.78) * 0.85
+      const k = 0.5 + value * 0.45
+      return [70 * k, 80 * k, 40 * k, alpha * 255]
     })
-    return finish(c)
+    return toTexture(canvas)
   })
-}
 
-/** Grey fBm for bump maps (clay pores, metal pitting). */
-export function bumpTex(seed = 3, base = 16) {
-  return once(`bump${seed}-${base}`, () => {
-    const size = 512
-    const { c, ctx } = canvas(size)
-    const n = fbm(size, seed, 4, base)
-    paintNoise(ctx, size, n, (v) => [v * 255, v * 255, v * 255])
-    return finish(c, false)
-  }, { color: false })
-}
+/** Grey fbm for bump maps (clay pores, metal pitting). `base` is the coarsest cell count. */
+export const bumpTex = (seed = 3, base = 16) =>
+  cachedTexture(
+    `bump${seed}-${base}`,
+    () => {
+      const size = 512
+      const { canvas, ctx } = makeCanvas(size)
+      const noise = fbm(size, seed, 4, base)
+      paintNoise(ctx, size, noise, (value) => [value * 255, value * 255, value * 255])
+      return toTexture(canvas, false)
+    },
+    { color: false },
+  )
 
 /** Long fibres running along V, for the seed pod. */
-export function fiberTex() {
-  return once('fiber', () => {
-    const w = 512
-    const { c, ctx } = canvas(w)
+export const fiberTex = () =>
+  cachedTexture('fiber', () => {
+    const size = 512
+    const { canvas, ctx } = makeCanvas(size)
     ctx.fillStyle = '#bba57e'
-    ctx.fillRect(0, 0, w, w)
-    const r = rng(5)
+    ctx.fillRect(0, 0, size, size)
+    const random = rng(5)
     for (let i = 0; i < 900; i++) {
-      const y = r() * w
-      const l = 44 + r() * 30
-      ctx.strokeStyle = hsl(34 + r() * 10, 18 + r() * 16, l)
-      ctx.globalAlpha = 0.35 + r() * 0.5
-      ctx.lineWidth = 0.6 + r() * 1.8
+      const y = random() * size
+      const lightness = 44 + random() * 30
+      ctx.strokeStyle = hsl(34 + random() * 10, 18 + random() * 16, lightness)
+      ctx.globalAlpha = 0.35 + random() * 0.5
+      ctx.lineWidth = 0.6 + random() * 1.8
       ctx.beginPath()
       ctx.moveTo(-10, y)
-      ctx.bezierCurveTo(w * 0.3, y + (r() - 0.5) * 10, w * 0.7, y + (r() - 0.5) * 10, w + 10, y + (r() - 0.5) * 6)
+      ctx.bezierCurveTo(size * 0.3, y + (random() - 0.5) * 10, size * 0.7, y + (random() - 0.5) * 10, size + 10, y + (random() - 0.5) * 6)
       ctx.stroke()
     }
     ctx.globalAlpha = 1
-    overlayGrain(ctx, w, 12, 0.3)
-    return finish(c)
+    overlayGrain(ctx, size, 12, 0.3)
+    return toTexture(canvas)
   })
-}
 
-/** Clay skin: warm mottling + pores. */
-export function clayTex() {
-  return once('clay', () => {
+/** Clay skin: warm mottling plus pores. */
+export const clayTex = () =>
+  cachedTexture('clay', () => {
     const size = 512
-    const { c, ctx } = canvas(size)
-    const n = fbm(size, 33, 5, 4)
-    paintNoise(ctx, size, n, (v) => {
-      const k = 0.8 + v * 0.34
+    const { canvas, ctx } = makeCanvas(size)
+    const noise = fbm(size, 33, 5, 4)
+    paintNoise(ctx, size, noise, (value) => {
+      const k = 0.8 + value * 0.34
       return [172 * k, 114 * k, 92 * k]
     })
-    const r = rng(8)
+    const random = rng(8)
     for (let i = 0; i < 1400; i++) {
-      ctx.fillStyle = r() < 0.6 ? 'rgba(80,36,20,0.32)' : 'rgba(240,200,170,0.2)'
-      const s = 0.8 + r() * 1.8
+      ctx.fillStyle = random() < 0.6 ? 'rgba(80,36,20,0.32)' : 'rgba(240,200,170,0.2)'
+      const pore = 0.8 + random() * 1.8
       ctx.beginPath()
-      ctx.arc(r() * size, r() * size, s, 0, Math.PI * 2)
+      ctx.arc(random() * size, random() * size, pore, 0, Math.PI * 2)
       ctx.fill()
     }
-    return finish(c)
+    return toTexture(canvas)
   })
-}
 
-/** Leaf with midrib and veins (heart leaf, apex at top). */
-export function leafTex() {
-  return once('leaf', () => {
-    const size = 256
-    const { c, ctx } = canvas(size)
-    const grd = ctx.createRadialGradient(size / 2, size * 0.7, 10, size / 2, size * 0.55, size * 0.7)
-    grd.addColorStop(0, '#9fb556')
-    grd.addColorStop(1, '#5e7a2c')
-    ctx.fillStyle = grd
-    ctx.fillRect(0, 0, size, size)
-    ctx.strokeStyle = 'rgba(226,236,168,0.55)'
-    ctx.lineWidth = 3
-    ctx.beginPath()
-    ctx.moveTo(size / 2, size)
-    ctx.lineTo(size / 2, 6)
-    ctx.stroke()
-    ctx.lineWidth = 1.6
-    for (let i = 0; i < 6; i++) {
-      const y = size * (0.85 - i * 0.13)
-      for (const s of [-1, 1]) {
-        ctx.beginPath()
-        ctx.moveTo(size / 2, y)
-        ctx.quadraticCurveTo(size / 2 + s * size * 0.2, y - size * 0.1, size / 2 + s * size * 0.42, y - size * 0.2)
-        ctx.stroke()
+/** Leaf with midrib and veins (heart leaf, apex at the top). Not tiled. */
+export const leafTex = () =>
+  cachedTexture(
+    'leaf',
+    () => {
+      const size = 256
+      const { canvas, ctx } = makeCanvas(size)
+      const gradient = ctx.createRadialGradient(size / 2, size * 0.7, 10, size / 2, size * 0.55, size * 0.7)
+      gradient.addColorStop(0, '#9fb556')
+      gradient.addColorStop(1, '#5e7a2c')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, size, size)
+      ctx.strokeStyle = 'rgba(226,236,168,0.55)'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(size / 2, size)
+      ctx.lineTo(size / 2, 6)
+      ctx.stroke()
+      ctx.lineWidth = 1.6
+      for (let i = 0; i < 6; i++) {
+        const y = size * (0.85 - i * 0.13)
+        for (const side of [-1, 1]) {
+          ctx.beginPath()
+          ctx.moveTo(size / 2, y)
+          ctx.quadraticCurveTo(size / 2 + side * size * 0.2, y - size * 0.1, size / 2 + side * size * 0.42, y - size * 0.2)
+          ctx.stroke()
+        }
       }
-    }
-    overlayGrain(ctx, size, 4, 0.25)
-    return finish(c, true, false)
-  }, { repeat: false })
-}
+      overlayGrain(ctx, size, 4, 0.25)
+      return toTexture(canvas, true, false)
+    },
+    { repeat: false },
+  )
 
-/** Soft canopy shadows seen through the whitewashed glass. Greyscale. */
-export function foliageTex() {
-  return once('foliage', () => {
-    const size = 512
-    const { c, ctx } = canvas(size)
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, size, size)
-    const r = rng(101)
-    ctx.filter = 'blur(10px)'
-    for (let t = 0; t < 7; t++) {
-      const cx = r() * size
-      const cy = size * (0.15 + r() * 0.6)
-      for (let i = 0; i < 26; i++) {
-        const a = r() * Math.PI * 2
-        const d = r() * 90
-        const rad = 14 + r() * 36
-        ctx.fillStyle = `rgba(255,255,255,${0.25 + r() * 0.35})`
-        for (const ox of [-size, 0, size]) {
-          for (const oy of [-size, 0, size]) {
-            ctx.beginPath()
-            ctx.arc(cx + Math.cos(a) * d + ox, cy + Math.sin(a) * d * 0.7 + oy, rad, 0, Math.PI * 2)
-            ctx.fill()
+/** Soft canopy shadows seen through the whitewashed glass. Greyscale, tiled. */
+export const foliageTex = () =>
+  cachedTexture(
+    'foliage',
+    () => {
+      const size = 512
+      const { canvas, ctx } = makeCanvas(size)
+      ctx.fillStyle = '#000'
+      ctx.fillRect(0, 0, size, size)
+      const random = rng(101)
+      ctx.filter = 'blur(10px)'
+      for (let clump = 0; clump < 7; clump++) {
+        const cx = random() * size
+        const cy = size * (0.15 + random() * 0.6)
+        for (let i = 0; i < 26; i++) {
+          const angle = random() * Math.PI * 2
+          const distance = random() * 90
+          const radius = 14 + random() * 36
+          ctx.fillStyle = `rgba(255,255,255,${0.25 + random() * 0.35})`
+          // painted nine times, shifted by the tile size, so the blur wraps at the edges
+          for (const ox of [-size, 0, size]) {
+            for (const oy of [-size, 0, size]) {
+              ctx.beginPath()
+              ctx.arc(cx + Math.cos(angle) * distance + ox, cy + Math.sin(angle) * distance * 0.7 + oy, radius, 0, Math.PI * 2)
+              ctx.fill()
+            }
           }
         }
       }
-    }
-    ctx.filter = 'none'
-    return finish(c, false)
-  }, { color: false })
-}
+      ctx.filter = 'none'
+      return toTexture(canvas, false)
+    },
+    { color: false },
+  )
 
 /** A tree silhouette with alpha, for the cards outside the glass. */
-export function treeTex(seed: number) {
-  return once(`tree${seed}`, () => {
-    const w = 512
-    const h = 640
-    const { c, ctx } = canvas(w, h)
-    const r = rng(seed)
-    ctx.clearRect(0, 0, w, h)
-    ctx.filter = 'blur(3px)'
-    ctx.fillStyle = '#ffffff'
-    ctx.beginPath()
-    ctx.moveTo(w * 0.47, h)
-    ctx.lineTo(w * 0.49, h * 0.45)
-    ctx.lineTo(w * 0.53, h * 0.45)
-    ctx.lineTo(w * 0.55, h)
-    ctx.fill()
-    for (let i = 0; i < 80; i++) {
-      const a = r() * Math.PI * 2
-      const d = Math.sqrt(r()) * w * 0.34
-      const rad = 18 + r() * 42
-      ctx.globalAlpha = 0.55 + r() * 0.45
+export const treeTex = (seed: number) =>
+  cachedTexture(
+    `tree${seed}`,
+    () => {
+      const width = 512
+      const height = 640
+      const { canvas, ctx } = makeCanvas(width, height)
+      const random = rng(seed)
+      ctx.clearRect(0, 0, width, height)
+      ctx.filter = 'blur(3px)'
+      ctx.fillStyle = '#ffffff'
+      // trunk
       ctx.beginPath()
-      ctx.arc(w / 2 + Math.cos(a) * d, h * 0.36 + Math.sin(a) * d * 0.8, rad, 0, Math.PI * 2)
+      ctx.moveTo(width * 0.47, height)
+      ctx.lineTo(width * 0.49, height * 0.45)
+      ctx.lineTo(width * 0.53, height * 0.45)
+      ctx.lineTo(width * 0.55, height)
       ctx.fill()
-    }
-    ctx.globalAlpha = 1
-    ctx.filter = 'none'
-    return finish(c, false, false)
-  }, { color: false, repeat: false })
-}
+      // canopy
+      for (let i = 0; i < 80; i++) {
+        const angle = random() * Math.PI * 2
+        const distance = Math.sqrt(random()) * width * 0.34
+        const radius = 18 + random() * 42
+        ctx.globalAlpha = 0.55 + random() * 0.45
+        ctx.beginPath()
+        ctx.arc(width / 2 + Math.cos(angle) * distance, height * 0.36 + Math.sin(angle) * distance * 0.8, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.globalAlpha = 1
+      ctx.filter = 'none'
+      return toTexture(canvas, false, false)
+    },
+    { color: false, repeat: false },
+  )
 
-/** Scales a BoxGeometry's UVs to metres and turns the grain along the box's longest side. */
-export function boxUV(geo: THREE.BufferGeometry, w: number, h: number, d: number, tile = 1, grain = false) {
-  const uv = geo.getAttribute('uv') as THREE.BufferAttribute
+// ===== Helpers: UVs =====
+
+/** Scales a BoxGeometry's UVs to metres (`tile` m per repeat) and turns the grain along the longest side. */
+export const boxUV = (geometry: THREE.BufferGeometry, w: number, h: number, d: number, tile = 1, grain = false) => {
+  const uv = geometry.getAttribute('uv') as THREE.BufferAttribute
   // faces: +x, -x, +y, -y, +z, -z — (u axis, v axis) sizes
-  const dims: [number, number][] = [
+  const faceSizes: [number, number][] = [
     [d, h],
     [d, h],
     [w, d],
@@ -478,17 +522,17 @@ export function boxUV(geo: THREE.BufferGeometry, w: number, h: number, d: number
     [w, h],
   ]
   const longest = Math.max(w, h, d)
-  for (let f = 0; f < 6; f++) {
-    const [du, dv] = dims[f]
+  for (let face = 0; face < 6; face++) {
+    const [du, dv] = faceSizes[face]
     const swap = grain && du === longest && dv !== longest
-    for (let k = 0; k < 4; k++) {
-      const i = f * 4 + k
-      const u = uv.getX(i) * du
-      const v = uv.getY(i) * dv
-      if (swap) uv.setXY(i, v / tile, u / tile)
-      else uv.setXY(i, u / tile, v / tile)
+    for (let corner = 0; corner < 4; corner++) {
+      const index = face * 4 + corner
+      const u = uv.getX(index) * du
+      const v = uv.getY(index) * dv
+      if (swap) uv.setXY(index, v / tile, u / tile)
+      else uv.setXY(index, u / tile, v / tile)
     }
   }
   uv.needsUpdate = true
-  return geo
+  return geometry
 }
