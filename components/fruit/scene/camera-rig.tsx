@@ -21,6 +21,14 @@ const FOV = { desktop: 42, mobile: 52 }
 const WALK_DAMP = 4.2
 /** Largest yaw toward a selected specimen (radians). */
 const MAX_YAW = 0.052
+/** With the sheet open, how far beside the specimen the camera aims (metres) so it sits in the free 45% left of the sheet. */
+const SHEET_AIM_OFFSET = 0.85
+/** How fast the camera steps into the aisle when the sheet opens, and back when it closes (lerp lambda). Low, so it reads as a step and not a cut. */
+const PUSH_DAMP_IN = 2.5
+const PUSH_DAMP_OUT = 4
+/** How fast the look-at blends to the sheet framing and back (damp lambda). */
+const SHEET_MIX_IN = 3
+const SHEET_MIX_OUT = 4
 
 // ===== Component: CameraRig =====
 
@@ -68,12 +76,12 @@ export const CameraRig = ({ mobile }: { mobile: boolean }) => {
       const [sx, sy, sz] = selected.position
       pushTarget.current.set(sx - Math.sign(sx) * 1.5, sy + 0.18, sz - 1.35)
       pushTarget.current.sub(scratchPosition.current)
-      push.current.lerp(pushTarget.current, 1 - Math.exp(-5 * dt))
-      sheetAim.current.set(sx - (mobile ? 0 : 0.85), sy - 0.04, sz)
+      push.current.lerp(pushTarget.current, 1 - Math.exp(-PUSH_DAMP_IN * dt))
+      sheetAim.current.set(sx - (mobile ? 0 : SHEET_AIM_OFFSET), sy - 0.04, sz)
     } else {
-      push.current.lerp(zero.current, 1 - Math.exp(-6 * dt))
+      push.current.lerp(zero.current, 1 - Math.exp(-PUSH_DAMP_OUT * dt))
     }
-    sheetMix.current = THREE.MathUtils.damp(sheetMix.current, framing ? 1 : 0, framing ? 5 : 6, dt)
+    sheetMix.current = THREE.MathUtils.damp(sheetMix.current, framing ? 1 : 0, framing ? SHEET_MIX_IN : SHEET_MIX_OUT, dt)
 
     camera.position.copy(scratchPosition.current).add(push.current)
     scratchAim.current.copy(scratchLook.current)

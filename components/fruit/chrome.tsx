@@ -27,10 +27,12 @@ type FruitChromeProps = {
   support: string
   /** The HUD readout; BenchApp writes its text directly on scroll. */
   hudRef: RefObject<HTMLSpanElement | null>
-  /** Index click: walk to the station, then open the sheet. */
+  /** Index click: walk to the station; the arrival opens the sheet. */
   onSelect: (id: string) => void
   /** Index hover or focus: light the specimen up without walking. */
   onHighlight: (id: string) => void
+  /** Tag click: open the sheet right away, same as a click on the fruit. */
+  onOpen: (id: string) => void
   onLens: (lens: Lens) => void
 }
 
@@ -44,7 +46,7 @@ const twoDigits = (index: number) => String(index + 1).padStart(2, '0')
 
 // ===== Component: FruitChrome =====
 
-export const FruitChrome = ({ lang, setLang, cases, selectedId, visited, lens, sheetOpen, headline, support, hudRef, onSelect, onHighlight, onLens }: FruitChromeProps) => {
+export const FruitChrome = ({ lang, setLang, cases, selectedId, visited, lens, sheetOpen, headline, support, hudRef, onSelect, onHighlight, onOpen, onLens }: FruitChromeProps) => {
   // --- Derived ---
   const ui = fruitCopy(lang)
   const selected = cases.find((item) => item.id === selectedId)
@@ -128,11 +130,12 @@ export const FruitChrome = ({ lang, setLang, cases, selectedId, visited, lens, s
         <p>{support}</p>
       </div>
 
-      {selected && !sheetOpen ? (
-        <div className="fruit-tag">
+      {/* the tag stays mounted under an open sheet (hidden by CSS) so the sheet can grow out of it and shrink back */}
+      {selected ? (
+        <button type="button" className="fruit-tag" aria-label={`${ui.openCase}: ${selected[lang].cardTitle}`} inert={sheetOpen ? true : undefined} onClick={() => onOpen(selected.id)}>
           <small>{twoDigits(cases.findIndex((item) => item.id === selected.id))}</small>
           <span>{selected[lang].cardTitle}</span>
-        </div>
+        </button>
       ) : null}
 
       <div className="fruit-hud">

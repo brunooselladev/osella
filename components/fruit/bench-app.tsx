@@ -22,7 +22,7 @@ import { FruitSheet } from './sheet'
 import type { BenchCase, BenchCopy } from './types'
 import { useBenchKeys } from './use-bench-keys'
 import { useBenchScroll } from './use-bench-scroll'
-import { useBenchState } from './use-bench-state'
+import { OPEN_WINDOW, useBenchState } from './use-bench-state'
 
 // ===== Types =====
 
@@ -49,10 +49,8 @@ export const BenchApp = ({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
   const searchParams = useSearchParams()
   const frameParam = searchParams.get('frame')
   const caseParam = searchParams.get('case')
-  const { rootRef, hudRef, sheetOpenRef, selectedId, sheetOpen, step, lens, visited, active, applyProgress, onUserScroll, openSheet, closeSheet, goStep, hush, highlight, lockLens, markVisited } = useBenchState({ cases, lang })
-  const { pinRef, scrollToProgress } = useBenchScroll({ onProgress: applyProgress, onUserScroll })
-  /** The case armed by a first click on the index; a second click opens its sheet. */
-  const armedId = useRef<string | null>(null)
+  const { rootRef, hudRef, sheetOpenRef, selectedId, sheetOpen, step, lens, visited, active, applyProgress, openSheet, closeSheet, holdClosed, walkTo, goStep, highlight, lockLens, markVisited } = useBenchState({ cases, lang })
+  const { pinRef, scrollToProgress } = useBenchScroll({ onProgress: applyProgress })
   const booted = useRef(false)
   const [useGl, setUseGl] = useState(true)
   const [sceneShown, setSceneShown] = useState(false)
@@ -64,26 +62,26 @@ export const BenchApp = ({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
   const onSceneShown = useCallback(() => setSceneShown(true), [])
   const onSceneFail = useCallback(() => setUseGl(false), [])
 
-  /** The skip-list: first click walks to the station, second click (or Enter again) opens the sheet. */
+  /**
+   * The skip-list: one click walks to the station and the arrival opens the sheet (the dwell
+   * logic in useBenchState). Already standing there, it opens right away: Lenis would not move.
+   */
   const selectCase = useCallback(
     (id: string) => {
       const station = stationForCase(id)
       if (!station) return
       highlight(id)
-      if (armedId.current === id) {
-        openSheet(id)
-        armedId.current = null
+      if (Math.abs(live.progress - station.progress) < OPEN_WINDOW) {
+        if (!sheetOpenRef.current) openSheet(id)
         return
       }
-      armedId.current = id
-      if (sheetOpenRef.current) closeSheet()
-      hush()
+      walkTo(id)
       scrollToProgress(station.progress)
     },
-    [closeSheet, highlight, hush, openSheet, scrollToProgress, sheetOpenRef],
+    [highlight, openSheet, scrollToProgress, sheetOpenRef, walkTo],
   )
 
-  /** Canvas hover: lights the specimen up, unless the sheet is open. */
+  /** Canvas hover: lights the specimen up, unless the sheet is open. Hover is a highlight only, never an input for opening. */
   const onHover = useCallback(
     (id: string | null) => {
       live.hoverId = id
@@ -92,7 +90,7 @@ export const BenchApp = ({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
     [highlight, sheetOpenRef],
   )
 
-  /** Canvas click: straight to the sheet. */
+  /** Canvas click, or the tag: straight to the sheet. */
   const onPick = useCallback(
     (id: string) => {
       highlight(id)
@@ -123,8 +121,9 @@ export const BenchApp = ({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
     if (booted.current) return
     booted.current = true
     const framed = frameParam ? FRAMES[frameParam] : undefined
-    hush(400)
     if (framed) {
+      // a frame without a sheet stands inside a station's window (02 at 0.40): hold that sheet shut
+      if (framed.caseId && !framed.sheet) holdClosed(framed.caseId)
       scrollToProgress(framed.progress, 0)
       applyProgress(framed.progress)
       if (framed.caseId) highlight(framed.caseId)
@@ -138,7 +137,7 @@ export const BenchApp = ({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
       applyProgress(station.progress)
       openSheet(caseParam)
     }
-  }, [applyProgress, caseParam, cases, frameParam, highlight, hush, markVisited, openSheet, scrollToProgress])
+  }, [applyProgress, caseParam, cases, frameParam, highlight, holdClosed, markVisited, openSheet, scrollToProgress])
 
   // --- Render ---
   return (
@@ -162,6 +161,7 @@ export const BenchApp = ({ cases, copy }: { cases: BenchCase[]; copy: BenchCopy 
           hudRef={hudRef}
           onSelect={selectCase}
           onHighlight={onHighlight}
+          onOpen={onPick}
           onLens={lockLens}
         />
         <FruitDoor lang={lang} email={copy.email} />

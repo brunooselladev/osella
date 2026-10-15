@@ -15,7 +15,7 @@ import { live } from '../bench-live'
 import { isOn } from '../lookdev'
 import { getTier, TIERS, useTier } from '../quality'
 import { SharpenEffect } from '../sharpen'
-import { FocusRig } from './focus-rig'
+import { FOCUS_RANGE, FocusRig } from './focus-rig'
 
 // ===== Types =====
 
@@ -54,7 +54,7 @@ export const Post = ({ mobile }: { mobile: boolean }) => {
       <FocusRig dof={dofRef} />
       <EffectComposer multisampling={mobile ? 0 : MSAA_SAMPLES} enableNormalPass={false}>
         {isOn('ao') ? <N8AO ref={aoRef as never} aoRadius={0.6} intensity={2.2} distanceFalloff={0.9} halfRes={aoHalfRes} quality={mobile ? 'performance' : 'medium'} color="#2a1c10" /> : <></>}
-        {isOn('dof') && !mobile && !reduce ? <DepthOfField ref={dofRef} worldFocusRange={5.5} bokehScale={1.1} /> : <></>}
+        {isOn('dof') && !mobile && !reduce ? <DepthOfField ref={dofRef} focusRange={FOCUS_RANGE} bokehScale={1.1} /> : <></>}
         {isOn('bloom') ? <Bloom mipmapBlur luminanceThreshold={1.25} luminanceSmoothing={0.1} intensity={0.32} /> : <></>}
         <ToneMapping mode={ToneMappingMode.NEUTRAL} />
         <Vignette offset={0.32} darkness={0.36} />

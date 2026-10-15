@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react'
 import { fruitCopy } from '@/content/fruit'
 import type { Lang, Lens } from '@/content/types'
 import type { BenchCase } from './types'
+import { useSheetFlip } from './use-sheet-flip'
 
 // ===== Types =====
 
@@ -72,6 +73,9 @@ export const FruitSheet = ({ open, study, lang, lens, step, onStep, onClose }: F
   const story = copy?.story
 
   // --- Effects ---
+  // The panel grows out of the specimen tag and shrinks back into it.
+  useSheetFlip(sheetRef, open)
+
   // While reading, the wheel reads the sheet instead of walking the bench (which would close it).
   useEffect(() => {
     const sheet = sheetRef.current
@@ -88,9 +92,14 @@ export const FruitSheet = ({ open, study, lang, lens, step, onStep, onClose }: F
     return () => sheet.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Focus follows the step: the title on the card, the kicker on a stage.
+  // Focus follows the step while reading: the kicker on a stage, the title back on the card.
+  // Focus on opening is useBenchState's call: it moves into the sheet only when a focused control
+  // opened it, not when the walk, a canvas click or a deep link did.
+  const prevStep = useRef(step)
   useEffect(() => {
-    if (!open) return
+    const changed = prevStep.current !== step
+    prevStep.current = step
+    if (!open || !changed) return
     const target = step === 0 ? document.getElementById('sheet-title') : sheetRef.current?.querySelector<HTMLElement>(`[data-step="${step}"] .fruit-step-kicker`)
     target?.focus({ preventScroll: true })
   }, [open, step])

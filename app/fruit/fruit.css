@@ -14,6 +14,8 @@
   --mono: var(--font-mono), ui-monospace, Menlo, monospace;
   --display: var(--font-serif), 'Cormorant Garamond', Georgia, serif;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* the sheet's flip and the tag's fade: a soft in-out, so neither end reads as a cut (use-sheet-flip.ts reads it too) */
+  --ease-flip: cubic-bezier(0.65, 0, 0.35, 1);
   --bench: 0;
   color: var(--fg);
   background: var(--stage);
@@ -533,6 +535,7 @@ html:has(.fruit-root).lenis body {
   white-space: nowrap;
 }
 
+/* the specimen's tag: a button that opens its sheet; the sheet grows out of it (use-sheet-flip.ts) */
 .fruit-tag {
   position: absolute;
   left: var(--tag-x, min(78vw, 1120px));
@@ -540,12 +543,43 @@ html:has(.fruit-root).lenis body {
   z-index: 4;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
+  margin: 0;
   padding: 8px 12px;
   background: color-mix(in srgb, var(--cream) 88%, transparent);
   border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
-  transform: skewY(-3deg);
-  pointer-events: none;
+  font: inherit;
+  text-align: left;
+  opacity: 1;
+  transform: skewY(-3deg) scale(1);
+  cursor: pointer;
+  transition: opacity 220ms var(--ease-flip), transform 220ms var(--ease-flip), visibility 0s linear 0s, border-color 180ms var(--ease), box-shadow 180ms var(--ease);
+}
+
+/* mounts with a fade and a slight scale, the same way it hides */
+@starting-style {
+  .fruit-tag {
+    opacity: 0;
+    transform: skewY(-3deg) scale(0.96);
+  }
+}
+
+.fruit-tag:hover {
+  border-color: var(--rose);
+  box-shadow: 0 6px 18px rgba(20, 19, 15, 0.12);
+}
+
+/*
+ * Hidden while the sheet is open (it fades under the panel growing out of it) and while the panel
+ * is still shrinking back (data-flip="out", use-sheet-flip.ts): it fades back in once the panel is gone.
+ */
+.fruit-root[data-sheet='on'] .fruit-tag,
+.fruit-stage:has(.fruit-sheet[data-flip='out']) .fruit-tag {
+  opacity: 0;
+  transform: skewY(-3deg) scale(0.96);
+  visibility: hidden;
+  transition: opacity 220ms var(--ease-flip), transform 220ms var(--ease-flip), visibility 0s linear 220ms, border-color 180ms var(--ease), box-shadow 180ms var(--ease);
 }
 
 .fruit-root[data-tag-hidden='true'] .fruit-tag,
@@ -605,6 +639,44 @@ html:has(.fruit-root).lenis body {
   padding: 0;
 }
 
+/*
+ * The sheet grows out of the tag and shrinks back into it (use-sheet-flip.ts). While a flip runs
+ * the panel is opaque and the hook owns its transform; the content fades in over the last part of
+ * the growth and drops out first on the way back.
+ */
+.fruit-sheet[data-flip] {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transform-origin: 0 0;
+  transition: none;
+}
+
+.fruit-sheet[data-flip='start'],
+.fruit-sheet[data-flip='out'] {
+  box-shadow: none;
+}
+
+.fruit-sheet[data-flip='out'] {
+  pointer-events: none;
+}
+
+/* the content comes in over the last third of the 650 ms growth and drops out over the first third of the 420 ms shrink */
+.fruit-sheet[data-flip] > :not(.fruit-step-nav) {
+  transition: opacity 220ms var(--ease-flip) 430ms;
+}
+
+/* the start state must snap: the hook sets it and moves on to "in" within the same tick */
+.fruit-sheet[data-flip='start'] > :not(.fruit-step-nav) {
+  opacity: 0;
+  transition: none;
+}
+
+.fruit-sheet[data-flip='out'] > :not(.fruit-step-nav) {
+  opacity: 0;
+  transition: opacity 140ms var(--ease-flip);
+}
+
 .fruit-sheet-close {
   position: absolute;
   right: 40px;
@@ -631,14 +703,16 @@ html:has(.fruit-root).lenis body {
 
 .fruit-sheet-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 24px;
+  gap: 8px 24px;
   margin-top: 14px;
 }
 
 .fruit-sheet-note {
   font-size: 12px;
   letter-spacing: 0.08em;
+  white-space: nowrap;
   color: var(--rose-text);
 }
 
@@ -1178,6 +1252,12 @@ html:has(.fruit-root).lenis body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .fruit-root .fruit-tag,
+  .fruit-root[data-sheet='on'] .fruit-tag {
+    transform: skewY(-3deg);
+    transition: opacity 150ms linear, visibility 0s linear 150ms;
+  }
+
   .fruit-root .fruit-sheet,
   .fruit-root .fruit-hero,
   .fruit-root .fruit-door,
